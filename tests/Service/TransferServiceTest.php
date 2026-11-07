@@ -8,6 +8,8 @@ use App\Entity\Transaction;
 use App\Entity\Wallet;
 use App\Enum\Currency;
 use App\Enum\TransactionStatus;
+use App\Exception\InsufficientFundsException;
+use App\Exception\SameWalletTransferException;
 use App\Exception\WalletNotFoundException;
 use App\Repository\TransactionRepositoryInterface;
 use App\Repository\WalletRepositoryInterface;
@@ -194,5 +196,54 @@ class TransferServiceTest extends TestCase
         $this->expectExceptionMessage('Wallet 2 not found.');
 
         $this->transferService->transfer(1, 1, 2, '100.00');
+    }
+
+    public function testTransferThrowsWhenSourceAndTargetWalletAreTheSame(): void
+    {
+        $wallet = Wallet::create(1, Currency::PLN);
+        $wallet->setBalance(100.0);
+
+        $this->walletRepository
+            ->method('findById')
+            ->willReturn($wallet);
+
+        $this->walletRepository->expects(self::never())->method('save');
+        $this->transactionRepository->expects(self::never())->method('save');
+
+        try {
+            $this->transferService->transfer(1, 1, 1, '10.00');
+            self::fail('Expected SameWalletTransferException.');
+        } catch (SameWalletTransferException $e) {
+            self::assertSame('Cannot transfer funds within the same wallet 1.', $e->getMessage());
+        }
+
+        self::assertSame(100.0, $wallet->getBalance());
+    }
+
+    public function testTransferThrowsWhenAmountExceedsBalance(): void
+    {
+        $fromWallet = Wallet::create(1, Currency::PLN);
+        $fromWallet->setBalance(100.0);
+        $toWallet = Wallet::create(1, Currency::EUR);
+
+        $this->walletRepository
+            ->method('findById')
+            ->willReturnMap([
+                [1, $fromWallet],
+                [2, $toWallet],
+            ]);
+
+        $this->walletRepository->expects(self::never())->method('save');
+        $this->transactionRepository->expects(self::never())->method('save');
+
+        try {
+            $this->transferService->transfer(1, 1, 2, '100.01');
+            self::fail('Expected InsufficientFundsException.');
+        } catch (InsufficientFundsException $e) {
+            self::assertSame('Insufficient funds in wallet 1.', $e->getMessage());
+        }
+
+        self::assertSame(100.0, $fromWallet->getBalance());
+        self::assertSame(0.0, $toWallet->getBalance());
     }
 }
