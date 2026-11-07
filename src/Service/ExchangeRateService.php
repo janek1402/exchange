@@ -25,4 +25,9 @@ class ExchangeRateService
     {
         return $this->getExchangeRate($from) / $this->getExchangeRate($to);
     }
+
+    public function getValueInEur(float $amount, Currency $currency): float
+    {
+        return $amount * $this->getExchangeRateBetween($currency, Currency::EUR);
+    }
 }

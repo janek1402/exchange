@@ -57,6 +57,13 @@ final class ProcessTransactionsCommand extends Command
         }
 
         foreach ($fraudReview as $transaction) {
+            // Approval or rejection needs a human decision, so the transaction waits for one.
+            if (!$input->isInteractive()) {
+                $io->warning(sprintf('Transaction #%d skipped: fraud review requires a manual decision.', $transaction->getId()));
+
+                continue;
+            }
+
             $io->section(sprintf('Fraud review — Transaction #%d', $transaction->getId()));
             $io->definitionList(
                 ['From wallet' => $transaction->getFromWalletId()],
@@ -67,7 +74,7 @@ final class ProcessTransactionsCommand extends Command
                 ['Created at' => $transaction->getCreatedAt()->format('Y-m-d H:i:s')],
             );
 
-            $approved = $io->confirm('Approve this transaction?');
+            $approved = $io->confirm('Approve this transaction?', false);
 
             try {
                 if ($approved) {

@@ -21,6 +21,7 @@ class ProcessTransactionsCommandTest extends TestCase
 {
     private const int BROKEN_TRANSACTION_ID = 7;
     private const int HEALTHY_TRANSACTION_ID = 8;
+    private const int FRAUD_REVIEW_TRANSACTION_ID = 9;
 
     public function testFailedPendingTransactionDoesNotStopTheNextOne(): void
     {
@@ -65,6 +66,43 @@ class ProcessTransactionsCommandTest extends TestCase
         self::assertSame(Command::FAILURE, $exitCode);
     }
 
+    public function testPressingEnterDoesNotApproveFraudReview(): void
+    {
+        $transaction = $this->healthyTransaction(TransactionStatus::FRAUD_REVIEW);
+
+        $tester = $this->tester(fraudReview: [$transaction]);
+        $tester->setInputs(['']);
+        $tester->execute([]);
+
+        self::assertSame(TransactionStatus::REJECTED, $transaction->getStatus());
+        self::assertNotNull($transaction->getAntiFraudCheckedAt());
+    }
+
+    public function testNonInteractiveRunSkipsFraudReviewAndStillCompletesPending(): void
+    {
+        $fraudReview = $this->transaction(self::FRAUD_REVIEW_TRANSACTION_ID, fromWalletId: 1, status: TransactionStatus::FRAUD_REVIEW);
+        $pending = $this->healthyTransaction(TransactionStatus::PENDING);
+
+        $tester = $this->tester(pending: [$pending], fraudReview: [$fraudReview]);
+        $exitCode = $tester->execute([], ['interactive' => false]);
+
+        self::assertSame(TransactionStatus::FRAUD_REVIEW, $fraudReview->getStatus());
+        self::assertNull($fraudReview->getAntiFraudCheckedAt());
+        self::assertStringContainsString('Transaction #'.self::FRAUD_REVIEW_TRANSACTION_ID.' skipped', $tester->getDisplay());
+        self::assertSame(TransactionStatus::COMPLETED, $pending->getStatus());
+        self::assertSame(Command::SUCCESS, $exitCode);
+    }
+
+    public function testNonInteractiveRunDoesNotApproveFraudReview(): void
+    {
+        $transaction = $this->healthyTransaction(TransactionStatus::FRAUD_REVIEW);
+
+        $tester = $this->tester(fraudReview: [$transaction]);
+        $tester->execute([], ['interactive' => false]);
+
+        self::assertNotSame(TransactionStatus::COMPLETED, $transaction->getStatus());
+    }
+
     public function testReturnsSuccessWhenEveryTransactionIsProcessed(): void
     {
         $healthy = $this->healthyTransaction(TransactionStatus::PENDING);
@@ -90,7 +128,8 @@ class ProcessTransactionsCommandTest extends TestCase
                 default => [],
             });
 
-        $reservedWallet = $this->wallet(1, Currency::PLN, reserved: 100.0);
+        // Enough for two healthy transactions processed in a single run.
+        $reservedWallet = $this->wallet(1, Currency::PLN, reserved: 200.0);
         $wallets = $this->createStub(WalletRepositoryInterface::class);
         $wallets
             ->method('findById')

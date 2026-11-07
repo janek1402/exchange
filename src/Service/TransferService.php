@@ -14,6 +14,8 @@ use DateTimeImmutable;
 
 readonly class TransferService
 {
+    private const int ANTI_FRAUD_THRESHOLD_EUR = 15_000;
+
     public function __construct(
         private WalletRepositoryInterface $walletRepository,
         private TransactionRepositoryInterface $transactionRepository,
@@ -75,7 +77,7 @@ readonly class TransferService
             toCurrency: $toCurrency,
             spread: $spread,
             exchangeRate: number_format($exchangeRate, 6, '.', ''),
-            requiresAntiFraudCheck: $toAmount > 15_000,
+            requiresAntiFraudCheck: $this->exchangeRateService->getValueInEur((float) $fromAmount, $fromCurrency) > self::ANTI_FRAUD_THRESHOLD_EUR,
         );
 
         $this->transactionRepository->save($transaction);
