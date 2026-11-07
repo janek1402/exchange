@@ -37,6 +37,8 @@ Właściciel nie jest programistą: tłumacz zmiany prostym językiem i zawsze o
 - Transakcję przetwarza się tylko ze statusu `PENDING` lub `FRAUD_REVIEW`. Ponowne przetworzenie to błąd.
 - `release()` większy niż rezerwacja to błąd księgowy: wyjątek, nigdy ciche obcięcie.
 - Zakazane: przelew na ten sam portfel, kwoty zerowe i ujemne.
+- Zablokowany portfel: nowy przelew z niego lub na niego = 422; przy przetwarzaniu przelew
+  jest odrzucany ze zwolnieniem rezerwacji.
 
 ### Antyfraud
 - Próg: przelew o wartości POWYŻEJ 15 000 EUR (ściśle `>`).
