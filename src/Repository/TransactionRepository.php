@@ -11,7 +11,9 @@ use DateTimeImmutable;
 use DateTimeZone;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception;
+use LogicException;
 use ReflectionClass;
+use RuntimeException;
 
 readonly class TransactionRepository implements TransactionRepositoryInterface
 {
@@ -40,6 +42,32 @@ readonly class TransactionRepository implements TransactionRepositoryInterface
         }
 
         return $this->buildEntity($row);
+    }
+
+    /**
+     * @throws Exception
+     */
+    public function refreshForUpdate(Transaction $transaction): void
+    {
+        $id = $transaction->getId();
+
+        if (null === $id) {
+            throw new LogicException('Cannot lock a transaction that was never saved.');
+        }
+
+        $row = $this->connection->fetchAssociative(
+            sprintf('SELECT status, anti_fraud_checked_at FROM %s WHERE id = :id FOR UPDATE', self::TABLE_NAME),
+            ['id' => $id],
+        );
+
+        if (!$row) {
+            throw new RuntimeException(sprintf('Transaction %d no longer exists.', $id));
+        }
+
+        $transaction->setStatus(TransactionStatus::from($row['status']));
+        $transaction->setAntiFraudCheckedAt(
+            null !== $row['anti_fraud_checked_at'] ? new DateTimeImmutable($row['anti_fraud_checked_at']) : null,
+        );
     }
 
     /**

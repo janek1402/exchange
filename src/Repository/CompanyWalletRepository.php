@@ -66,38 +66,21 @@ readonly class CompanyWalletRepository implements CompanyWalletRepositoryInterfa
     {
         $now = new DateTimeImmutable()->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
 
-        $existing = $this->findByCurrency($currency);
-
-        $qb = $this->connection->createQueryBuilder();
-        if (null === $existing) {
-            $qb
-                ->insert(self::TABLE_NAME)
-                ->values([
-                    'currency' => ':currency',
-                    'balance' => ':balance',
-                    'created_at' => ':created_at',
-                    'updated_at' => ':updated_at',
-                ]);
-
-            $this->connection->executeStatement($qb->getSQL(), [
+        // One query, so two simultaneous first spreads in a currency cannot collide.
+        $this->connection->executeStatement(
+            sprintf(
+                'INSERT INTO %s (currency, balance, created_at, updated_at)
+                VALUES (:currency, :balance, :created_at, :updated_at)
+                ON DUPLICATE KEY UPDATE balance = balance + VALUES(balance), updated_at = VALUES(updated_at)',
+                self::TABLE_NAME,
+            ),
+            [
                 'currency' => $currency->value,
                 'balance' => $amount,
                 'created_at' => $now,
                 'updated_at' => $now,
-            ]);
-        } else {
-            $qb
-                ->update(self::TABLE_NAME)
-                ->set('balance', 'balance + :amount')
-                ->set('updated_at', ':updated_at')
-                ->where('currency = :currency');
-
-            $this->connection->executeStatement($qb->getSQL(), [
-                'amount' => $amount,
-                'updated_at' => $now,
-                'currency' => $currency->value,
-            ]);
-        }
+            ],
+        );
     }
 
     private function buildEntity(array $row): CompanyWallet

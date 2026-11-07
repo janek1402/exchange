@@ -42,6 +42,25 @@ readonly class WalletRepository implements WalletRepositoryInterface
     }
 
     /**
+     * Always locks in ascending order, because two transfers in opposite directions locking
+     * in their own order would wait for each other forever.
+     *
+     * @throws Exception
+     */
+    public function lockForUpdate(int ...$ids): void
+    {
+        $ids = array_unique($ids);
+        sort($ids);
+
+        foreach ($ids as $id) {
+            $this->connection->fetchAssociative(
+                sprintf('SELECT id FROM %s WHERE id = :id FOR UPDATE', self::TABLE_NAME),
+                ['id' => $id],
+            );
+        }
+    }
+
+    /**
      * @return Wallet[]
      *
      * @throws Exception

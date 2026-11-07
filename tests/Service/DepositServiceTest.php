@@ -10,6 +10,7 @@ use App\Exception\WalletBlockedException;
 use App\Exception\WalletNotFoundException;
 use App\Repository\WalletRepositoryInterface;
 use App\Service\DepositService;
+use App\Tests\Support\ImmediateDatabaseTransaction;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\TestCase;
 
@@ -22,7 +23,7 @@ class DepositServiceTest extends TestCase
     protected function setUp(): void
     {
         $this->walletRepository = $this->createMock(WalletRepositoryInterface::class);
-        $this->depositService = new DepositService($this->walletRepository);
+        $this->depositService = new DepositService($this->walletRepository, new ImmediateDatabaseTransaction());
     }
 
     public function testDepositSuccessfully(): void

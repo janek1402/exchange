@@ -7,7 +7,9 @@ namespace App\Service;
 use App\Entity\Transaction;
 use App\Exception\InsufficientFundsException;
 use App\Exception\SameWalletTransferException;
+use App\Exception\WalletBlockedException;
 use App\Exception\WalletNotFoundException;
+use App\Repository\DatabaseTransactionInterface;
 use App\Repository\TransactionRepositoryInterface;
 use App\Repository\WalletRepositoryInterface;
 use DateTimeImmutable;
@@ -21,6 +23,7 @@ readonly class TransferService
         private TransactionRepositoryInterface $transactionRepository,
         private ExchangeRateService $exchangeRateService,
         private SpreadService $spreadService,
+        private DatabaseTransactionInterface $databaseTransaction,
     ) {
     }
 
@@ -30,58 +33,70 @@ readonly class TransferService
         int $toWalletId,
         string $fromAmount,
     ): Transaction {
-        $fromWallet = $this->walletRepository->findById($fromWalletId);
-        if (null === $fromWallet || $fromWallet->getUserId() !== $userId) {
-            throw new WalletNotFoundException($fromWalletId);
-        }
+        return $this->databaseTransaction->run(function () use ($userId, $fromWalletId, $toWalletId, $fromAmount): Transaction {
+            $this->walletRepository->lockForUpdate($fromWalletId, $toWalletId);
 
-        $toWallet = $this->walletRepository->findById($toWalletId);
-        if (null === $toWallet || $toWallet->getUserId() !== $userId) {
-            throw new WalletNotFoundException($toWalletId);
-        }
+            $fromWallet = $this->walletRepository->findById($fromWalletId);
+            if (null === $fromWallet || $fromWallet->getUserId() !== $userId) {
+                throw new WalletNotFoundException($fromWalletId);
+            }
 
-        if ($fromWalletId === $toWalletId) {
-            throw new SameWalletTransferException($fromWalletId);
-        }
+            $toWallet = $this->walletRepository->findById($toWalletId);
+            if (null === $toWallet || $toWallet->getUserId() !== $userId) {
+                throw new WalletNotFoundException($toWalletId);
+            }
 
-        if ((float) $fromAmount > $fromWallet->getBalance() - $fromWallet->getReservedBalance()) {
-            throw new InsufficientFundsException($fromWalletId);
-        }
+            if ($fromWalletId === $toWalletId) {
+                throw new SameWalletTransferException($fromWalletId);
+            }
 
-        $fromCurrency = $fromWallet->getCurrency();
-        $toCurrency = $toWallet->getCurrency();
+            if ($fromWallet->isBlocked()) {
+                throw new WalletBlockedException($fromWalletId);
+            }
 
-        $exchangeRate = $this->exchangeRateService->getExchangeRateBetween($fromCurrency, $toCurrency);
-        $rawToAmount = (float) $fromAmount * $exchangeRate;
-        $spread = $this->spreadService->calculateSpread($rawToAmount, $fromCurrency, $toCurrency);
-        $toAmount = $rawToAmount - (float) $spread;
+            if ($toWallet->isBlocked()) {
+                throw new WalletBlockedException($toWalletId);
+            }
 
-        $toAmountFormatted = number_format($toAmount, 4, '.', '');
+            if ((float) $fromAmount > $fromWallet->getBalance() - $fromWallet->getReservedBalance()) {
+                throw new InsufficientFundsException($fromWalletId);
+            }
 
-        // Funds stay on hold until the transaction is completed or rejected.
-        $fromWallet->reserve((float) $fromAmount);
+            $fromCurrency = $fromWallet->getCurrency();
+            $toCurrency = $toWallet->getCurrency();
 
-        $now = new DateTimeImmutable();
-        $fromWallet->setLastActivityAt($now);
-        $toWallet->setLastActivityAt($now);
+            $exchangeRate = $this->exchangeRateService->getExchangeRateBetween($fromCurrency, $toCurrency);
+            $rawToAmount = (float) $fromAmount * $exchangeRate;
+            $spread = $this->spreadService->calculateSpread($rawToAmount, $fromCurrency, $toCurrency);
+            $toAmount = $rawToAmount - (float) $spread;
 
-        $this->walletRepository->save($fromWallet);
-        $this->walletRepository->save($toWallet);
+            $toAmountFormatted = number_format($toAmount, 4, '.', '');
 
-        $transaction = Transaction::create(
-            fromWalletId: $fromWalletId,
-            toWalletId: $toWalletId,
-            fromAmount: $fromAmount,
-            toAmount: $toAmountFormatted,
-            fromCurrency: $fromCurrency,
-            toCurrency: $toCurrency,
-            spread: $spread,
-            exchangeRate: number_format($exchangeRate, 6, '.', ''),
-            requiresAntiFraudCheck: $this->exchangeRateService->getValueInEur((float) $fromAmount, $fromCurrency) > self::ANTI_FRAUD_THRESHOLD_EUR,
-        );
+            // Funds stay on hold until the transaction is completed or rejected.
+            $fromWallet->reserve((float) $fromAmount);
 
-        $this->transactionRepository->save($transaction);
+            $now = new DateTimeImmutable();
+            $fromWallet->setLastActivityAt($now);
+            $toWallet->setLastActivityAt($now);
 
-        return $transaction;
+            $this->walletRepository->save($fromWallet);
+            $this->walletRepository->save($toWallet);
+
+            $transaction = Transaction::create(
+                fromWalletId: $fromWalletId,
+                toWalletId: $toWalletId,
+                fromAmount: $fromAmount,
+                toAmount: $toAmountFormatted,
+                fromCurrency: $fromCurrency,
+                toCurrency: $toCurrency,
+                spread: $spread,
+                exchangeRate: number_format($exchangeRate, 6, '.', ''),
+                requiresAntiFraudCheck: $this->exchangeRateService->getValueInEur((float) $fromAmount, $fromCurrency) > self::ANTI_FRAUD_THRESHOLD_EUR,
+            );
+
+            $this->transactionRepository->save($transaction);
+
+            return $transaction;
+        });
     }
 }

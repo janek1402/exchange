@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Service;
 
 use App\Entity\Transaction;
+use App\Entity\Wallet;
 use App\Enum\TransactionStatus;
 use App\Exception\InvalidTransactionStateException;
 use App\Repository\CompanyWalletRepositoryInterface;
+use App\Repository\DatabaseTransactionInterface;
 use App\Repository\TransactionRepositoryInterface;
 use App\Repository\WalletRepositoryInterface;
 use DateTimeImmutable;
@@ -18,52 +20,84 @@ final readonly class TransactionProcessorService
         private WalletRepositoryInterface $walletRepository,
         private TransactionRepositoryInterface $transactionRepository,
         private CompanyWalletRepositoryInterface $companyWalletRepository,
+        private DatabaseTransactionInterface $databaseTransaction,
     ) {
     }
 
     public function complete(Transaction $transaction): void
     {
-        $this->assertProcessable($transaction);
+        $this->databaseTransaction->run(function () use ($transaction): void {
+            $this->lockAndAssertProcessable($transaction);
 
-        $fromWallet = $this->walletRepository->findById($transaction->getFromWalletId());
-        $toWallet = $this->walletRepository->findById($transaction->getToWalletId());
-        $fromAmount = (float) $transaction->getFromAmount();
+            $this->walletRepository->lockForUpdate($transaction->getFromWalletId(), $transaction->getToWalletId());
 
-        if (null === $fromWallet || null === $toWallet || $fromAmount > $fromWallet->getBalance()) {
-            $this->reject($transaction);
+            $fromWallet = $this->walletRepository->findById($transaction->getFromWalletId());
+            $toWallet = $this->walletRepository->findById($transaction->getToWalletId());
+            $fromAmount = (float) $transaction->getFromAmount();
 
-            return;
-        }
+            if (
+                null === $fromWallet
+                || null === $toWallet
+                || $fromWallet->isBlocked()
+                || $toWallet->isBlocked()
+                || $fromAmount > $fromWallet->getBalance()
+            ) {
+                $this->markRejected($transaction, $fromWallet);
 
-        $fromWallet->release($fromAmount);
-        $fromWallet->setBalance($fromWallet->getBalance() - $fromAmount);
-        $fromWallet->setLastActivityAt(new DateTimeImmutable());
+                return;
+            }
 
-        $toWallet->setBalance($toWallet->getBalance() + (float) $transaction->getToAmount());
-        $toWallet->setLastActivityAt(new DateTimeImmutable());
+            $fromWallet->release($fromAmount);
+            $fromWallet->setBalance($fromWallet->getBalance() - $fromAmount);
+            $fromWallet->setLastActivityAt(new DateTimeImmutable());
 
-        $this->walletRepository->save($fromWallet);
-        $this->walletRepository->save($toWallet);
+            $toWallet->setBalance($toWallet->getBalance() + (float) $transaction->getToAmount());
+            $toWallet->setLastActivityAt(new DateTimeImmutable());
 
-        $transaction->setStatus(TransactionStatus::COMPLETED);
+            $this->walletRepository->save($fromWallet);
+            $this->walletRepository->save($toWallet);
 
-        if ($transaction->requiresAntiFraudCheck()) {
-            $transaction->setAntiFraudCheckedAt(new DateTimeImmutable());
-        }
+            $transaction->setStatus(TransactionStatus::COMPLETED);
 
-        $this->transactionRepository->save($transaction);
+            if ($transaction->requiresAntiFraudCheck()) {
+                $transaction->setAntiFraudCheckedAt(new DateTimeImmutable());
+            }
 
-        // Booked last: if this write fails, the transaction is already completed and cannot
-        // be settled again, so only company revenue is affected, never the client's money.
-        $this->companyWalletRepository->addToBalance($transaction->getToCurrency(), $transaction->getSpread());
+            $this->transactionRepository->save($transaction);
+
+            $this->companyWalletRepository->addToBalance($transaction->getToCurrency(), $transaction->getSpread());
+        });
     }
 
     public function reject(Transaction $transaction): void
     {
-        $this->assertProcessable($transaction);
+        $this->databaseTransaction->run(function () use ($transaction): void {
+            $this->lockAndAssertProcessable($transaction);
 
-        $fromWallet = $this->walletRepository->findById($transaction->getFromWalletId());
+            $this->walletRepository->lockForUpdate($transaction->getFromWalletId());
 
+            $this->markRejected($transaction, $this->walletRepository->findById($transaction->getFromWalletId()));
+        });
+    }
+
+    /**
+     * The caller's copy may be out of date, because another run could have processed the
+     * transaction since it was loaded. Only the state read under the lock can be trusted.
+     */
+    private function lockAndAssertProcessable(Transaction $transaction): void
+    {
+        $this->transactionRepository->refreshForUpdate($transaction);
+
+        $status = $transaction->getStatus();
+
+        if (TransactionStatus::PENDING !== $status && TransactionStatus::FRAUD_REVIEW !== $status) {
+            throw new InvalidTransactionStateException($transaction->getId(), $status);
+        }
+    }
+
+    /** Also releases funds of a blocked wallet: client's money must never stay on hold for good. */
+    private function markRejected(Transaction $transaction, ?Wallet $fromWallet): void
+    {
         if (null !== $fromWallet) {
             $fromWallet->release((float) $transaction->getFromAmount());
             $this->walletRepository->save($fromWallet);
@@ -76,14 +110,5 @@ final readonly class TransactionProcessorService
         }
 
         $this->transactionRepository->save($transaction);
-    }
-
-    private function assertProcessable(Transaction $transaction): void
-    {
-        $status = $transaction->getStatus();
-
-        if (TransactionStatus::PENDING !== $status && TransactionStatus::FRAUD_REVIEW !== $status) {
-            throw new InvalidTransactionStateException($transaction->getId(), $status);
-        }
     }
 }

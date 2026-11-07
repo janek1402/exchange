@@ -99,7 +99,7 @@ final class WalletController extends AbstractController
             );
         } catch (WalletNotFoundException $e) {
             return new JsonResponse(['error' => $e->getMessage()], Response::HTTP_NOT_FOUND);
-        } catch (SameWalletTransferException|InsufficientFundsException $e) {
+        } catch (SameWalletTransferException|InsufficientFundsException|WalletBlockedException $e) {
             return new JsonResponse(['error' => $e->getMessage()], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 

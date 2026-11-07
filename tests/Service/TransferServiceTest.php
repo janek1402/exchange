@@ -16,6 +16,7 @@ use App\Repository\WalletRepositoryInterface;
 use App\Service\ExchangeRateService;
 use App\Service\SpreadService;
 use App\Service\TransferService;
+use App\Tests\Support\ImmediateDatabaseTransaction;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\TestCase;
 
@@ -40,6 +41,7 @@ class TransferServiceTest extends TestCase
             $this->transactionRepository,
             $this->exchangeRateService,
             $this->spreadService,
+            new ImmediateDatabaseTransaction(),
         );
     }
 

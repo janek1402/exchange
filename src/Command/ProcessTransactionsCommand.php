@@ -52,7 +52,7 @@ final class ProcessTransactionsCommand extends Command
             if (TransactionStatus::COMPLETED === $transaction->getStatus()) {
                 $io->success(sprintf('Transaction #%d completed.', $transaction->getId()));
             } else {
-                $io->warning(sprintf('Transaction #%d rejected (wallet not found or insufficient funds).', $transaction->getId()));
+                $io->warning(sprintf('Transaction #%d rejected (wallet not found, wallet blocked or insufficient funds).', $transaction->getId()));
             }
         }
 
@@ -83,7 +83,7 @@ final class ProcessTransactionsCommand extends Command
                     if (TransactionStatus::COMPLETED === $transaction->getStatus()) {
                         $io->success(sprintf('Transaction #%d approved and completed.', $transaction->getId()));
                     } else {
-                        $io->warning(sprintf('Transaction #%d rejected (wallet not found or insufficient funds).', $transaction->getId()));
+                        $io->warning(sprintf('Transaction #%d rejected (wallet not found, wallet blocked or insufficient funds).', $transaction->getId()));
                     }
                 } else {
                     $this->transactionProcessorService->reject($transaction);

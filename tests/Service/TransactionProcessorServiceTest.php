@@ -12,6 +12,7 @@ use App\Repository\CompanyWalletRepositoryInterface;
 use App\Repository\TransactionRepositoryInterface;
 use App\Repository\WalletRepositoryInterface;
 use App\Service\TransactionProcessorService;
+use App\Tests\Support\ImmediateDatabaseTransaction;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\TestCase;
 
@@ -33,6 +34,7 @@ class TransactionProcessorServiceTest extends TestCase
             $this->walletRepository,
             $this->transactionRepository,
             $this->companyWalletRepository,
+            new ImmediateDatabaseTransaction(),
         );
     }
 
@@ -49,8 +51,8 @@ class TransactionProcessorServiceTest extends TestCase
     }
 
     /**
-     * Without a database transaction the writes can stop halfway. A settled transaction left
-     * as pending could be settled again, charging the client twice, so the status goes first.
+     * The database transaction undoes every write after a failure. The order stays as a second
+     * safeguard: a settled transaction left as pending could be settled again.
      */
     public function testTransactionIsSavedAsCompletedBeforeSpreadIsBooked(): void
     {

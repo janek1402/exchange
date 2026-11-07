@@ -13,6 +13,7 @@ use App\Repository\CompanyWalletRepositoryInterface;
 use App\Repository\TransactionRepositoryInterface;
 use App\Repository\WalletRepositoryInterface;
 use App\Service\TransactionProcessorService;
+use App\Tests\Support\ImmediateDatabaseTransaction;
 use DateTimeImmutable;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Command\Command;
@@ -142,7 +143,7 @@ class ProcessTransactionsCommandTest extends TestCase
 
         return new CommandTester(new ProcessTransactionsCommand(
             $transactions,
-            new TransactionProcessorService($wallets, $transactions, $this->createStub(CompanyWalletRepositoryInterface::class)),
+            new TransactionProcessorService($wallets, $transactions, $this->createStub(CompanyWalletRepositoryInterface::class), new ImmediateDatabaseTransaction()),
         ));
     }
 

@@ -4,110 +4,47 @@ declare(strict_types=1);
 
 namespace App\Tests\Service;
 
-use App\Entity\CompanyWallet;
 use App\Entity\Transaction;
 use App\Entity\Wallet;
 use App\Enum\Currency;
 use App\Enum\TransactionStatus;
 use App\Exception\InsufficientFundsException;
 use App\Exception\InvalidTransactionStateException;
-use App\Repository\CompanyWalletRepositoryInterface;
-use App\Repository\TransactionRepositoryInterface;
-use App\Repository\WalletRepositoryInterface;
 use App\Service\ExchangeRateService;
 use App\Service\SpreadService;
 use App\Service\TransactionProcessorService;
 use App\Service\TransferService;
+use App\Tests\Support\InMemoryCompanyWalletRepository;
+use App\Tests\Support\InMemoryDatabase;
+use App\Tests\Support\InMemoryWalletRepository;
 use DateTimeImmutable;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Runs the real services together. The in-memory wallet repository hands out a fresh copy
- * on every read, like the database-backed one, so unsaved changes are not visible.
+ * Runs the real services together on an in-memory database that hands out a fresh copy
+ * on every read, like the real one, so unsaved changes are not visible.
  */
 class TransferLifecycleTest extends TestCase
 {
     private const int FROM_WALLET_ID = 1;
     private const int TO_WALLET_ID = 2;
 
-    private WalletRepositoryInterface $wallets;
-    private CompanyWalletRepositoryInterface $companyWallets;
+    private InMemoryWalletRepository $wallets;
+    private InMemoryCompanyWalletRepository $companyWallets;
     private TransferService $transferService;
     private TransactionProcessorService $processor;
 
     protected function setUp(): void
     {
-        $this->wallets = new class implements WalletRepositoryInterface {
-            /** @var array<int, Wallet> */
-            public array $rows = [];
-
-            public function findById(int $id): ?Wallet
-            {
-                return isset($this->rows[$id]) ? clone $this->rows[$id] : null;
-            }
-
-            public function findByUserId(int $userId): array
-            {
-                return [];
-            }
-
-            public function findByUserIdAndCurrency(int $userId, Currency $currency): ?Wallet
-            {
-                return null;
-            }
-
-            public function save(Wallet $wallet): void
-            {
-                $this->rows[$wallet->getId()] = clone $wallet;
-            }
-        };
-
-        $transactions = new class implements TransactionRepositoryInterface {
-            public function findById(int $id): ?Transaction
-            {
-                return null;
-            }
-
-            public function findByWalletId(int $walletId): array
-            {
-                return [];
-            }
-
-            public function findByStatus(TransactionStatus $status): array
-            {
-                return [];
-            }
-
-            public function save(Transaction $transaction): void
-            {
-            }
-        };
-
-        $this->companyWallets = new class implements CompanyWalletRepositoryInterface {
-            /** @var list<array{Currency, string}> */
-            public array $booked = [];
-
-            public function findByCurrency(Currency $currency): ?CompanyWallet
-            {
-                return null;
-            }
-
-            public function findAll(): array
-            {
-                return [];
-            }
-
-            public function addToBalance(Currency $currency, string $amount): void
-            {
-                $this->booked[] = [$currency, $amount];
-            }
-        };
+        $database = new InMemoryDatabase();
+        $this->wallets = $database->wallets;
+        $this->companyWallets = $database->companyWallets;
 
         $this->wallets->rows[self::FROM_WALLET_ID] = new Wallet(self::FROM_WALLET_ID, 1, Currency::PLN, 1000.0, false, null, new DateTimeImmutable());
         $this->wallets->rows[self::TO_WALLET_ID] = new Wallet(self::TO_WALLET_ID, 1, Currency::EUR, 0.0, false, null, new DateTimeImmutable());
 
-        $this->transferService = new TransferService($this->wallets, $transactions, new ExchangeRateService(), new SpreadService());
-        $this->processor = new TransactionProcessorService($this->wallets, $transactions, $this->companyWallets);
+        $this->transferService = new TransferService($this->wallets, $database->transactions, new ExchangeRateService(), new SpreadService(), $database);
+        $this->processor = new TransactionProcessorService($this->wallets, $database->transactions, $this->companyWallets, $database);
     }
 
     public function testCreatingTransferBooksNoSpread(): void

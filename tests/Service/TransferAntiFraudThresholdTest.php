@@ -12,6 +12,7 @@ use App\Repository\WalletRepositoryInterface;
 use App\Service\ExchangeRateService;
 use App\Service\SpreadService;
 use App\Service\TransferService;
+use App\Tests\Support\ImmediateDatabaseTransaction;
 use DateTimeImmutable;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -55,6 +56,7 @@ class TransferAntiFraudThresholdTest extends TestCase
             $this->createStub(TransactionRepositoryInterface::class),
             new ExchangeRateService(),
             new SpreadService(),
+            new ImmediateDatabaseTransaction(),
         );
 
         $transaction = $service->transfer(1, 1, 2, $amount);
