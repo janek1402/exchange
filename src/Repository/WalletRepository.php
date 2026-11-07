@@ -107,6 +107,7 @@ readonly class WalletRepository implements WalletRepositoryInterface
             isBlocked: (bool) $row['is_blocked'],
             lastActivityAt: null !== $row['last_activity_at'] ? new DateTimeImmutable($row['last_activity_at']) : null,
             createdAt: new DateTimeImmutable($row['created_at']),
+            reservedBalance: (float) $row['reserved_balance'],
         );
     }
 
@@ -123,6 +124,7 @@ readonly class WalletRepository implements WalletRepositoryInterface
                 'user_id' => ':user_id',
                 'currency' => ':currency',
                 'balance' => ':balance',
+                'reserved_balance' => ':reserved_balance',
                 'is_blocked' => ':is_blocked',
                 'last_activity_at' => ':last_activity_at',
                 'created_at' => ':created_at',
@@ -134,6 +136,7 @@ readonly class WalletRepository implements WalletRepositoryInterface
                 'user_id' => $wallet->getUserId(),
                 'currency' => $wallet->getCurrency()->value,
                 'balance' => $wallet->getBalance(),
+                'reserved_balance' => $wallet->getReservedBalance(),
                 'is_blocked' => (int) $wallet->isBlocked(),
                 'last_activity_at' => $wallet->getLastActivityAt()?->setTimezone(timezone: new DateTimeZone('UTC'))->format('Y-m-d H:i:s'),
                 'created_at' => $wallet->getCreatedAt()
@@ -159,6 +162,7 @@ readonly class WalletRepository implements WalletRepositoryInterface
         $qb
             ->update(self::TABLE_NAME)
             ->set('balance', ':balance')
+            ->set('reserved_balance', ':reserved_balance')
             ->set('is_blocked', ':is_blocked')
             ->set('last_activity_at', ':last_activity_at')
             ->where('id = :id');
@@ -167,6 +171,7 @@ readonly class WalletRepository implements WalletRepositoryInterface
             $qb->getSQL(),
             [
                 'balance' => $wallet->getBalance(),
+                'reserved_balance' => $wallet->getReservedBalance(),
                 'is_blocked' => (int) $wallet->isBlocked(),
                 'last_activity_at' => $wallet->getLastActivityAt()?->setTimezone(timezone: new DateTimeZone('UTC'))->format('Y-m-d H:i:s'),
                 'id' => $wallet->getId(),

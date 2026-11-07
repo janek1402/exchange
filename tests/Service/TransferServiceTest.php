@@ -46,40 +46,10 @@ class TransferServiceTest extends TestCase
     public function testTransferSuccessfully(): void
     {
         $userId = 1;
-        $fromWallet = $this->createMock(Wallet::class);
-        $fromWallet
-            ->method('getCurrency')
-            ->willReturn(Currency::PLN);
-        $fromWallet
-            ->expects($this->atLeastOnce())
-            ->method('getBalance')
-            ->willReturnOnConsecutiveCalls(
-                5000.0,
-                4000.0
-            );
-        $fromWallet
-            ->method('getUserId')
-            ->willReturn($userId);
-        $fromWallet
-            ->expects($this->never())
-            ->method('setBalance');
-        $toWallet = $this->createMock(Wallet::class);
-        $toWallet
-            ->method('getCurrency')
-            ->willReturn(Currency::EUR);
-        $toWallet
-            ->expects($this->atLeastOnce())
-            ->method('getBalance')
-            ->willReturnOnConsecutiveCalls(
-                100.0,
-                349.0
-            );
-        $toWallet
-            ->method('getUserId')
-            ->willReturn($userId);
-        $toWallet
-            ->expects($this->never())
-            ->method('setBalance');
+        $fromWallet = Wallet::create($userId, Currency::PLN);
+        $fromWallet->setBalance(5000.0);
+        $toWallet = Wallet::create($userId, Currency::EUR);
+        $toWallet->setBalance(100.0);
 
         $this->walletRepository
             ->expects(self::exactly(2))
@@ -113,12 +83,15 @@ class TransferServiceTest extends TestCase
 
         $transaction = $this->transferService->transfer($userId, 1, 2, '1000.00');
 
-        self::assertSame(4000.0, $fromWallet->getBalance());
-        self::assertSame(349.0, $toWallet->getBalance());
+        self::assertSame(5000.0, $fromWallet->getBalance());
+        self::assertSame(1000.0, $fromWallet->getReservedBalance());
+        self::assertSame(100.0, $toWallet->getBalance());
+        self::assertNotNull($fromWallet->getLastActivityAt());
+        self::assertNotNull($toWallet->getLastActivityAt());
         self::assertSame(TransactionStatus::PENDING, $transaction->getStatus());
         self::assertFalse($transaction->requiresAntiFraudCheck());
         self::assertSame('1000.00', $transaction->getFromAmount());
-        self::assertSame('248.3775', $transaction->getToAmount());
+        self::assertSame('249.0000', $transaction->getToAmount());
         self::assertSame('0.250000', $transaction->getExchangeRate());
         self::assertSame('1.00', $transaction->getSpread());
         self::assertSame(Currency::PLN, $transaction->getFromCurrency());

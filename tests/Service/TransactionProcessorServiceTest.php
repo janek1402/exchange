@@ -36,6 +36,7 @@ class TransactionProcessorServiceTest extends TestCase
     {
         $fromWallet = Wallet::create(1, Currency::PLN);
         $fromWallet->setBalance(500.0);
+        $fromWallet->reserve(100.0);
 
         $toWallet = Wallet::create(1, Currency::EUR);
         $toWallet->setBalance(100.0);
@@ -73,6 +74,7 @@ class TransactionProcessorServiceTest extends TestCase
     {
         $fromWallet = Wallet::create(1, Currency::PLN);
         $fromWallet->setBalance(500.0);
+        $fromWallet->reserve(100.0);
 
         $toWallet = Wallet::create(1, Currency::EUR);
 
@@ -113,6 +115,7 @@ class TransactionProcessorServiceTest extends TestCase
     {
         $fromWallet = Wallet::create(1, Currency::PLN);
         $fromWallet->setBalance(500.0);
+        $fromWallet->reserve(100.0);
 
         $transaction = $this->makeTransaction(requiresAntiFraudCheck: false);
 
@@ -123,11 +126,16 @@ class TransactionProcessorServiceTest extends TestCase
                 [2, null],
             ]);
 
-        $this->walletRepository->expects(self::never())->method('save');
+        $this->walletRepository
+            ->expects(self::once())
+            ->method('save')
+            ->with($fromWallet);
 
         $this->transactionProcessorService->complete($transaction);
 
         self::assertSame(TransactionStatus::REJECTED, $transaction->getStatus());
+        self::assertSame(0.0, $fromWallet->getReservedBalance());
+        self::assertSame(500.0, $fromWallet->getBalance());
     }
 
     public function testRejectSetsRejectedStatus(): void

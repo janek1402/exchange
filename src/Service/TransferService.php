@@ -10,6 +10,7 @@ use App\Exception\SameWalletTransferException;
 use App\Exception\WalletNotFoundException;
 use App\Repository\TransactionRepositoryInterface;
 use App\Repository\WalletRepositoryInterface;
+use DateTimeImmutable;
 
 readonly class TransferService
 {
@@ -41,7 +42,7 @@ readonly class TransferService
             throw new SameWalletTransferException($fromWalletId);
         }
 
-        if ((float) $fromAmount > $fromWallet->getBalance()) {
+        if ((float) $fromAmount > $fromWallet->getBalance() - $fromWallet->getReservedBalance()) {
             throw new InsufficientFundsException($fromWalletId);
         }
 
@@ -55,8 +56,12 @@ readonly class TransferService
 
         $toAmountFormatted = number_format($toAmount, 4, '.', '');
 
-        $fromWallet->setBalance($fromWallet->getBalance() - (float) $fromAmount);
-        $toWallet->setBalance($toWallet->getBalance() + (float) $toAmountFormatted);
+        // Funds stay on hold until the transaction is completed or rejected.
+        $fromWallet->reserve((float) $fromAmount);
+
+        $now = new DateTimeImmutable();
+        $fromWallet->setLastActivityAt($now);
+        $toWallet->setLastActivityAt($now);
 
         $this->walletRepository->save($fromWallet);
         $this->walletRepository->save($toWallet);

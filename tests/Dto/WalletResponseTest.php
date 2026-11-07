@@ -37,6 +37,16 @@ class WalletResponseTest extends TestCase
         self::assertSame($lastActivity->format(DateTimeInterface::ATOM), $data['lastActivityAt']);
     }
 
+    public function testJsonSerializeIncludesReservedBalance(): void
+    {
+        $wallet = Wallet::create(1, Currency::PLN);
+        $wallet->reserve(25.0);
+
+        $data = new WalletResponse($wallet)->jsonSerialize();
+
+        self::assertSame(25.0, $data['reservedBalance']);
+    }
+
     public function testJsonSerializeWithBlockedWallet(): void
     {
         $wallet = Wallet::create(1, Currency::USD);
