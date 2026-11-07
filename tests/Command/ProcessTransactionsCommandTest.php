@@ -9,6 +9,7 @@ use App\Entity\Transaction;
 use App\Entity\Wallet;
 use App\Enum\Currency;
 use App\Enum\TransactionStatus;
+use App\Repository\CompanyWalletRepositoryInterface;
 use App\Repository\TransactionRepositoryInterface;
 use App\Repository\WalletRepositoryInterface;
 use App\Service\TransactionProcessorService;
@@ -141,7 +142,7 @@ class ProcessTransactionsCommandTest extends TestCase
 
         return new CommandTester(new ProcessTransactionsCommand(
             $transactions,
-            new TransactionProcessorService($wallets, $transactions),
+            new TransactionProcessorService($wallets, $transactions, $this->createStub(CompanyWalletRepositoryInterface::class)),
         ));
     }
 

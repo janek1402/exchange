@@ -7,6 +7,7 @@ namespace App\Service;
 use App\Entity\Transaction;
 use App\Enum\TransactionStatus;
 use App\Exception\InvalidTransactionStateException;
+use App\Repository\CompanyWalletRepositoryInterface;
 use App\Repository\TransactionRepositoryInterface;
 use App\Repository\WalletRepositoryInterface;
 use DateTimeImmutable;
@@ -16,6 +17,7 @@ final readonly class TransactionProcessorService
     public function __construct(
         private WalletRepositoryInterface $walletRepository,
         private TransactionRepositoryInterface $transactionRepository,
+        private CompanyWalletRepositoryInterface $companyWalletRepository,
     ) {
     }
 
@@ -50,6 +52,10 @@ final readonly class TransactionProcessorService
         }
 
         $this->transactionRepository->save($transaction);
+
+        // Booked last: if this write fails, the transaction is already completed and cannot
+        // be settled again, so only company revenue is affected, never the client's money.
+        $this->companyWalletRepository->addToBalance($transaction->getToCurrency(), $transaction->getSpread());
     }
 
     public function reject(Transaction $transaction): void
