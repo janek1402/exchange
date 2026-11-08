@@ -24,5 +24,18 @@
       "Bash(git push *)",
       "Bash(docker exec * doctrine:migrations:migrate *)"
     ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/stop-run-tests.sh",
+            "timeout": 180
+          }
+        ]
+      }
+    ]
   }
 }
