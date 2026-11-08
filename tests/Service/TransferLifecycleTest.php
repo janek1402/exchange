@@ -168,7 +168,7 @@ class TransferLifecycleTest extends TestCase
 
         self::assertSame('900.0000', $this->from()->getBalance());
         self::assertSame('0.0000', $this->from()->getReservedBalance());
-        self::assertSame('23.4310', $this->to()->getBalance());
+        self::assertSame('23.4337', $this->to()->getBalance());
     }
 
     public function testRejectReturnsFundsToSender(): void
@@ -211,7 +211,7 @@ class TransferLifecycleTest extends TestCase
         }
 
         self::assertSame('900.0000', $this->from()->getBalance());
-        self::assertSame('23.4310', $this->to()->getBalance());
+        self::assertSame('23.4337', $this->to()->getBalance());
     }
 
     public function testRejectingCompletedTransactionDoesNotChangeBalances(): void

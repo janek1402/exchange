@@ -50,7 +50,9 @@ Właściciel nie jest programistą: tłumacz zmiany prostym językiem i zawsze o
 
 ### Spread i zarobek kantoru
 - Kantor zarabia na spreadzie przy każdym przewalutowaniu. Wzór jest w README.md; nie zmieniaj go bez zgody właściciela.
-- Spread zaokrąglaj zawsze w górę (na korzyść kantoru), do 2 miejsc po przecinku.
+- Spread zaokrąglaj zawsze w górę (na korzyść kantoru), do 4 miejsc po przecinku, jak wszystkie kwoty.
+  Dokładna wartość zostaje bez zmian. Nie zmieniaj liczby miejsc bez zgody właściciela
+  (przy 2 miejscach przelewy poniżej ok. 0,01 waluty docelowej byłyby niemożliwe).
 - Spread z każdego rozliczonego przelewu trafia do portfela firmy (`company_wallets`).
 
 ### Portfele i dostęp

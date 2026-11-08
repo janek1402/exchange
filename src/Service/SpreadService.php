@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Service;
 
 use App\Enum\Currency;
+use App\Money\Amount;
 use RoundingMode;
 
 class SpreadService
@@ -32,7 +33,7 @@ class SpreadService
         Currency $toCurrency,
     ): string {
         if ($fromCurrency === $toCurrency) {
-            return '0.00';
+            return '0.0000';
         }
 
         $fromLiquidity = self::LIQUIDITY_SCORE[$fromCurrency->value];
@@ -48,6 +49,8 @@ class SpreadService
             self::SCALE,
         );
 
-        return bcround($spread, 2, RoundingMode::HalfAwayFromZero);
+        // Always up, in the company's favour (AGENTS.md); an exact value stays as is.
+        // 4 decimals like all amounts, so tiny exchanges are possible and never free.
+        return bcround($spread, Amount::SCALE, RoundingMode::PositiveInfinity);
     }
 }
