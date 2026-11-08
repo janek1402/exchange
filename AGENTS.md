@@ -64,3 +64,13 @@ Właściciel nie jest programistą: tłumacz zmiany prostym językiem i zawsze o
 - Użytkownik ma dostęp wyłącznie do swoich portfeli. Cudzy portfel = odpowiedź 404 (nie 403),
   żeby nie zdradzać, że istnieje.
 - Saldo portfela nie może być ujemne.
+
+### Usuwanie portfela (`DELETE /api/wallets/{id}`)
+- Tylko soft delete (`deleted_at`). Wiersza nigdy nie usuwaj: wskazuje na niego historia transakcji.
+- Usunięty portfel nie istnieje dla aplikacji: każde zapytanie o portfele musi pomijać
+  `deleted_at IS NOT NULL` (przelew, wpłata, lista, ponowne usunięcie = 404).
+- Odmowa 409, gdy: rezerwacja > 0, istnieje przelew PENDING/FRAUD_REVIEW z portfela LUB na portfel
+  (przychodzący nie zostawia rezerwacji), saldo warte 0,01 EUR lub więcej. Zablokowany portfel = 422.
+- Saldo warte mniej niż 0,01 EUR (resztka, której nie da się wydać) trafia do portfela firmy w tej
+  samej transakcji DB. Progu nie zmieniaj bez zgody właściciela.
+- Jeden AKTYWNY portfel na użytkownika i walutę (indeks z kolumną `active_flag`); usuniętych może być wiele.
