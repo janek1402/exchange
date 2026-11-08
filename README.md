@@ -43,6 +43,13 @@ Earnings across all wallets are tracked via the `app:company-wallet` console com
 
 ---
 
+## Working with an AI agent
+
+The owner's guide (in Polish) – how to ask for changes, what a red CI means and when not to accept a
+change: [docs/praca-z-agentem-ai.md](docs/praca-z-agentem-ai.md). Rules for the agent itself: [AGENTS.md](AGENTS.md).
+
+---
+
 ## Prerequisites
 
 Make sure you have [Docker](https://www.docker.com/get-started) and [Docker Compose](https://docs.docker.com/compose/)
