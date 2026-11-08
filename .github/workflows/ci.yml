@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          extensions: bcmath, intl, pdo_mysql
+          coverage: none
+
+      - name: Install dependencies
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Run unit tests
+        run: composer tests
+
+  migrations:
+    name: Migrations on MariaDB 11.4
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      mariadb:
+        image: mariadb:11.4
+        env:
+          MARIADB_ROOT_PASSWORD: root
+          MARIADB_DATABASE: app
+          MARIADB_USER: app
+          MARIADB_PASSWORD: app
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      APP_ENV: dev
+      DATABASE_URL: mysql://app:app@127.0.0.1:3306/app?serverVersion=mariadb-11.4.0&charset=utf8
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          extensions: bcmath, intl, pdo_mysql
+          coverage: none
+
+      - name: Install dependencies
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Apply all migrations on an empty database
+        run: php bin/console doctrine:migrations:migrate --no-interaction
+
+      - name: Check that no migration is left unapplied
+        run: php bin/console doctrine:migrations:up-to-date
+
+      - name: Roll back all migrations
+        run: php bin/console doctrine:migrations:migrate first --no-interaction
+
+      - name: Apply all migrations again
+        run: php bin/console doctrine:migrations:migrate --no-interaction
+
+  committed-migrations:
+    name: Committed migrations unchanged
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compare migrations with the base commit
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: bash .github/scripts/check-migrations-unchanged.sh "$BASE"
