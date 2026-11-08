@@ -36,12 +36,17 @@ git push -u origin krotka-nazwa-zmiany
 ```
 
 Na GitHubie: **Compare & pull request → Create pull request**. Poczekaj na 3 zielone sprawdzenia,
-przejrzyj zakładkę **Files changed** (patrz niżej) i dopiero wtedy kliknij **Merge**.
-
-Po scaleniu zmiany z nową migracją uruchom ją sam (agent tego nie robi):
+przejrzyj zakładkę **Files changed** (patrz niżej) i dopiero wtedy wybierz **Rebase and merge**,
+a po scaleniu kliknij **Delete branch**. Potem u siebie:
 
 ```
 git switch main && git pull
+git branch -D krotka-nazwa-zmiany    # -D: po "Rebase and merge" git nie rozpozna gałęzi jako scalonej
+```
+
+Jeśli zmiana zawierała nową migrację, uruchom ją sam (agent tego nie robi):
+
+```
 docker exec -it php-fpm php bin/console doctrine:migrations:migrate
 ```
 
