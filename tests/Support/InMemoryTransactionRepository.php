@@ -46,6 +46,20 @@ final class InMemoryTransactionRepository implements TransactionRepositoryInterf
         return [];
     }
 
+    public function hasOpenTransactions(int $walletId): bool
+    {
+        foreach ($this->rows as $transaction) {
+            $touchesWallet = $transaction->getFromWalletId() === $walletId || $transaction->getToWalletId() === $walletId;
+            $isOpen = \in_array($transaction->getStatus(), [TransactionStatus::PENDING, TransactionStatus::FRAUD_REVIEW], true);
+
+            if ($touchesWallet && $isOpen) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public function save(Transaction $transaction): void
     {
         $this->database->recordWrite();

@@ -8,7 +8,11 @@ use App\Entity\Wallet;
 use App\Enum\Currency;
 use App\Repository\WalletRepository;
 use DateTimeImmutable;
+use DateTimeZone;
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Platforms\MariaDBPlatform;
+use Doctrine\DBAL\Query\QueryBuilder;
+use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -52,5 +56,90 @@ class WalletRepositoryTest extends TestCase
             );
 
         new WalletRepository($connection)->save($wallet);
+    }
+
+    /** A deleted wallet must look like a missing one everywhere: no transfers, deposits or listing. */
+    public function testFindByIdSkipsDeletedWallets(): void
+    {
+        $connection = $this->connectionBuildingRealSql();
+        $connection
+            ->expects(self::once())
+            ->method('fetchAssociative')
+            ->with(self::stringContains('deleted_at IS NULL'))
+            ->willReturn(false);
+
+        new WalletRepository($connection)->findById(1);
+    }
+
+    public function testFindByUserIdSkipsDeletedWallets(): void
+    {
+        $connection = $this->connectionBuildingRealSql();
+        $connection
+            ->expects(self::once())
+            ->method('fetchAllAssociative')
+            ->with(self::stringContains('deleted_at IS NULL'))
+            ->willReturn([]);
+
+        new WalletRepository($connection)->findByUserId(1);
+    }
+
+    /** Otherwise a deleted wallet would stop the client from opening a new one in that currency. */
+    public function testFindByUserIdAndCurrencySkipsDeletedWallets(): void
+    {
+        $connection = $this->connectionBuildingRealSql();
+        $connection
+            ->expects(self::once())
+            ->method('fetchAssociative')
+            ->with(self::stringContains('deleted_at IS NULL'))
+            ->willReturn(false);
+
+        new WalletRepository($connection)->findByUserIdAndCurrency(1, Currency::EUR);
+    }
+
+    public function testDeletionDateIsWritten(): void
+    {
+        $wallet = new Wallet(3, 2, Currency::PLN, '0', false, null, new DateTimeImmutable());
+        $wallet->markDeleted(new DateTimeImmutable('2026-11-08 12:00:00', new DateTimeZone('UTC')));
+
+        $connection = $this->connectionBuildingRealSql();
+        $connection
+            ->expects(self::once())
+            ->method('executeQuery')
+            ->with(
+                self::stringContains('deleted_at'),
+                self::callback(static fn (array $params): bool => '2026-11-08 12:00:00' === $params['deleted_at']),
+            );
+
+        new WalletRepository($connection)->save($wallet);
+    }
+
+    public function testDeletionDateIsRead(): void
+    {
+        $connection = $this->createStub(Connection::class);
+        $connection->method('fetchAssociative')->willReturn([
+            'id' => '1',
+            'user_id' => '2',
+            'currency' => 'PLN',
+            'balance' => '0.0000',
+            'reserved_balance' => '0.0000',
+            'is_blocked' => '0',
+            'last_activity_at' => null,
+            'created_at' => '2026-01-01 00:00:00',
+            'deleted_at' => '2026-11-08 12:00:00',
+        ]);
+
+        $wallet = new WalletRepository($connection)->findById(1);
+
+        self::assertTrue($wallet->isDeleted());
+    }
+
+    /** A plain mock hands out an empty query builder; this one builds the real MariaDB SQL. */
+    private function connectionBuildingRealSql(): Connection&MockObject
+    {
+        $connection = $this->createMock(Connection::class);
+        $connection->method('getDatabasePlatform')->willReturn(new MariaDBPlatform());
+        $connection->method('createQueryBuilder')->willReturnCallback(static fn (): QueryBuilder => new QueryBuilder($connection));
+
+        return $connection;
     }
 }

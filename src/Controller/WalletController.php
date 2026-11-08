@@ -13,11 +13,13 @@ use App\Exception\InvalidAmountException;
 use App\Exception\SameWalletTransferException;
 use App\Exception\WalletAlreadyExistsException;
 use App\Exception\WalletBlockedException;
+use App\Exception\WalletNotEmptyException;
 use App\Exception\WalletNotFoundException;
 use App\Money\Amount;
 use App\Repository\WalletRepositoryInterface;
 use App\Service\DepositService;
 use App\Service\TransferService;
+use App\Service\WalletDeletionService;
 use App\Service\WalletService;
 use JsonException;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -36,6 +38,7 @@ final class WalletController extends AbstractController
         private readonly WalletRepositoryInterface $walletRepository,
         private readonly TransferService $transferService,
         private readonly DepositService $depositService,
+        private readonly WalletDeletionService $walletDeletionService,
     ) {
     }
 
@@ -148,6 +151,25 @@ final class WalletController extends AbstractController
         }
 
         return new JsonResponse(new WalletResponse($wallet));
+    }
+
+    /**
+     * Someone else's wallet gets 404, not 403, so its existence is not revealed.
+     */
+    #[Route('/{id}', requirements: ['id' => '\d+'], methods: ['DELETE'])]
+    public function delete(int $id, #[CurrentUser] User $user): Response
+    {
+        try {
+            $this->walletDeletionService->deleteWallet($user->getIdNotNull(), $id);
+        } catch (WalletNotFoundException $e) {
+            return new JsonResponse(['error' => $e->getMessage()], Response::HTTP_NOT_FOUND);
+        } catch (WalletBlockedException $e) {
+            return new JsonResponse(['error' => $e->getMessage()], Response::HTTP_UNPROCESSABLE_ENTITY);
+        } catch (WalletNotEmptyException $e) {
+            return new JsonResponse(['error' => $e->getMessage()], Response::HTTP_CONFLICT);
+        }
+
+        return new Response(status: Response::HTTP_NO_CONTENT);
     }
 
     /**

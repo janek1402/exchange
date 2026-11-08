@@ -24,5 +24,8 @@ interface TransactionRepositoryInterface
     /** @return Transaction[] */
     public function findByStatus(TransactionStatus $status): array;
 
+    /** Whether a PENDING or FRAUD_REVIEW transaction goes from or to this wallet. */
+    public function hasOpenTransactions(int $walletId): bool;
+
     public function save(Transaction $transaction): void;
 }

@@ -21,7 +21,12 @@ final class InMemoryWalletRepository implements WalletRepositoryInterface
     {
         $this->database->events[] = 'read wallet '.$id;
 
-        return isset($this->rows[$id]) ? clone $this->rows[$id] : null;
+        // Like the real repository: a deleted wallet is not found.
+        if (!isset($this->rows[$id]) || $this->rows[$id]->isDeleted()) {
+            return null;
+        }
+
+        return clone $this->rows[$id];
     }
 
     public function lockForUpdate(int ...$ids): void

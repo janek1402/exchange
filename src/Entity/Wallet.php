@@ -27,6 +27,7 @@ class Wallet
         private ?DateTimeImmutable $lastActivityAt,
         private readonly DateTimeImmutable $createdAt,
         string $reservedBalance = '0',
+        private ?DateTimeImmutable $deletedAt = null,
     ) {
         $this->balance = Amount::normalize($balance);
         $this->reservedBalance = Amount::normalize($reservedBalance);
@@ -128,6 +129,29 @@ class Wallet
     public function setLastActivityAt(?DateTimeImmutable $lastActivityAt): void
     {
         $this->lastActivityAt = $lastActivityAt;
+    }
+
+    public function isDeleted(): bool
+    {
+        return null !== $this->deletedAt;
+    }
+
+    public function getDeletedAt(): ?DateTimeImmutable
+    {
+        return $this->deletedAt;
+    }
+
+    /**
+     * Soft delete: the row stays, because the transaction history points to it.
+     * The service decides what to do with a remainder; here the wallet must already be empty.
+     */
+    public function markDeleted(DateTimeImmutable $deletedAt): void
+    {
+        if (0 !== bccomp($this->balance, '0', Amount::SCALE) || 0 !== bccomp($this->reservedBalance, '0', Amount::SCALE)) {
+            throw new LogicException(sprintf('Wallet %s still holds %s (reserved %s) and cannot be deleted.', $this->id ?? 'new', $this->balance, $this->reservedBalance));
+        }
+
+        $this->deletedAt = $deletedAt;
     }
 
     private function positiveAmount(string $amount): string

@@ -110,6 +110,31 @@ readonly class TransactionRepository implements TransactionRepositoryInterface
     }
 
     /**
+     * Both directions: an incoming transfer leaves no reservation on the wallet.
+     *
+     * @throws Exception
+     */
+    public function hasOpenTransactions(int $walletId): bool
+    {
+        $found = $this->connection->fetchOne(
+            sprintf(
+                'SELECT 1 FROM %s
+                WHERE (from_wallet_id = :wallet_id OR to_wallet_id = :wallet_id)
+                AND status IN (:pending, :fraud_review)
+                LIMIT 1',
+                self::TABLE_NAME,
+            ),
+            [
+                'wallet_id' => $walletId,
+                'pending' => TransactionStatus::PENDING->value,
+                'fraud_review' => TransactionStatus::FRAUD_REVIEW->value,
+            ],
+        );
+
+        return false !== $found;
+    }
+
+    /**
      * @throws Exception
      */
     public function save(Transaction $transaction): void

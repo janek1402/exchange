@@ -171,6 +171,46 @@ class WalletTest extends TestCase
         $this->assertSame($date, $wallet->getLastActivityAt());
     }
 
+    public function testNewWalletIsNotDeleted(): void
+    {
+        $wallet = Wallet::create(userId: 1, currency: Currency::PLN);
+
+        $this->assertFalse($wallet->isDeleted());
+        $this->assertNull($wallet->getDeletedAt());
+    }
+
+    public function testMarkDeleted(): void
+    {
+        $wallet = Wallet::create(userId: 1, currency: Currency::PLN);
+        $date = new DateTimeImmutable('2026-11-08 12:00:00');
+
+        $wallet->markDeleted($date);
+
+        $this->assertTrue($wallet->isDeleted());
+        $this->assertSame($date, $wallet->getDeletedAt());
+    }
+
+    /** Last line of defence: deleting a wallet with money on it would hide the money. */
+    public function testMarkDeletedRefusesWalletWithBalance(): void
+    {
+        $wallet = Wallet::create(userId: 1, currency: Currency::PLN);
+        $wallet->setBalance('0.0001');
+
+        $this->expectException(LogicException::class);
+
+        $wallet->markDeleted(new DateTimeImmutable());
+    }
+
+    public function testMarkDeletedRefusesWalletWithReservation(): void
+    {
+        $wallet = Wallet::create(userId: 1, currency: Currency::PLN);
+        $wallet->reserve('10');
+
+        $this->expectException(LogicException::class);
+
+        $wallet->markDeleted(new DateTimeImmutable());
+    }
+
     public function testSetLastActivityAtWithNull(): void
     {
         $wallet = Wallet::create(userId: 1, currency: Currency::PLN);

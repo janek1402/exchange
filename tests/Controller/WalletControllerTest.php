@@ -15,10 +15,12 @@ use App\Exception\InvalidAmountException;
 use App\Exception\SameWalletTransferException;
 use App\Exception\WalletAlreadyExistsException;
 use App\Exception\WalletBlockedException;
+use App\Exception\WalletNotEmptyException;
 use App\Exception\WalletNotFoundException;
 use App\Repository\WalletRepositoryInterface;
 use App\Service\DepositService;
 use App\Service\TransferService;
+use App\Service\WalletDeletionService;
 use App\Service\WalletService;
 use DateTimeImmutable;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
@@ -34,6 +36,7 @@ class WalletControllerTest extends TestCase
     private WalletRepositoryInterface $walletRepository;
     private TransferService $transferService;
     private DepositService $depositService;
+    private WalletDeletionService $walletDeletionService;
     private WalletController $controller;
 
     protected function setUp(): void
@@ -42,12 +45,14 @@ class WalletControllerTest extends TestCase
         $this->walletRepository = $this->createMock(WalletRepositoryInterface::class);
         $this->transferService = $this->createMock(TransferService::class);
         $this->depositService = $this->createMock(DepositService::class);
+        $this->walletDeletionService = $this->createMock(WalletDeletionService::class);
 
         $this->controller = new WalletController(
             $this->walletService,
             $this->walletRepository,
             $this->transferService,
             $this->depositService,
+            $this->walletDeletionService,
         );
     }
 
@@ -583,5 +588,54 @@ class WalletControllerTest extends TestCase
 
         $data = json_decode($response->getContent(), true, 512, JSON_THROW_ON_ERROR);
         self::assertSame('Wallet 5 is blocked.', $data['error']);
+    }
+
+    /**
+     * @throws Throwable
+     */
+    public function testDeleteReturnsNoContent(): void
+    {
+        $user = new User(1, 'test@example.com', ['ROLE_USER'], new DateTimeImmutable());
+
+        $this->walletDeletionService
+            ->expects(self::once())
+            ->method('deleteWallet')
+            ->with(1, 5);
+
+        $response = $this->controller->delete(5, $user);
+
+        self::assertSame(204, $response->getStatusCode());
+        self::assertSame('', $response->getContent());
+    }
+
+    /**
+     * Someone else's wallet gets 404, not 403, so its existence is not revealed.
+     *
+     * @throws Throwable
+     */
+    #[DataProvider('deleteErrors')]
+    public function testDeleteMapsErrors(Throwable $exception, int $status, string $message): void
+    {
+        $user = new User(1, 'test@example.com', ['ROLE_USER'], new DateTimeImmutable());
+
+        $this->walletDeletionService->method('deleteWallet')->willThrowException($exception);
+
+        $response = $this->controller->delete(5, $user);
+
+        self::assertSame($status, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true, 512, JSON_THROW_ON_ERROR);
+        self::assertSame($message, $data['error']);
+    }
+
+    public static function deleteErrors(): iterable
+    {
+        yield 'missing or foreign' => [new WalletNotFoundException(5), 404, 'Wallet 5 not found.'];
+        yield 'blocked' => [new WalletBlockedException(5), 422, 'Wallet 5 is blocked.'];
+        yield 'money on it' => [
+            new WalletNotEmptyException('Wallet 5 still holds 12.3400 PLN. Spend or transfer it first.'),
+            409,
+            'Wallet 5 still holds 12.3400 PLN. Spend or transfer it first.',
+        ];
     }
 }

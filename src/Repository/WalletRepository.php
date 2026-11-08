@@ -30,7 +30,9 @@ readonly class WalletRepository implements WalletRepositoryInterface
         $qb
             ->select('*')
             ->from(self::TABLE_NAME)
-            ->where('id = :id');
+            ->where('id = :id')
+            // A deleted wallet looks missing everywhere: no transfers, deposits or deleting twice.
+            ->andWhere('deleted_at IS NULL');
 
         $row = $this->connection->fetchAssociative($qb->getSQL(), ['id' => $id]);
 
@@ -72,7 +74,8 @@ readonly class WalletRepository implements WalletRepositoryInterface
         $qb
             ->select('*')
             ->from(self::TABLE_NAME)
-            ->where('user_id = :user_id');
+            ->where('user_id = :user_id')
+            ->andWhere('deleted_at IS NULL');
 
         $rows = $this->connection->fetchAllAssociative($qb->getSQL(), ['user_id' => $userId]);
 
@@ -90,7 +93,9 @@ readonly class WalletRepository implements WalletRepositoryInterface
             ->select('*')
             ->from(self::TABLE_NAME)
             ->where('user_id = :user_id')
-            ->andWhere('currency = :currency');
+            ->andWhere('currency = :currency')
+            // So a deleted wallet does not stop the client from opening a new one in this currency.
+            ->andWhere('deleted_at IS NULL');
 
         $row = $this->connection->fetchAssociative($qb->getSQL(), [
             'user_id' => $userId,
@@ -128,6 +133,7 @@ readonly class WalletRepository implements WalletRepositoryInterface
             lastActivityAt: null !== $row['last_activity_at'] ? new DateTimeImmutable($row['last_activity_at']) : null,
             createdAt: new DateTimeImmutable($row['created_at']),
             reservedBalance: (string) $row['reserved_balance'],
+            deletedAt: isset($row['deleted_at']) ? new DateTimeImmutable($row['deleted_at']) : null,
         );
     }
 
@@ -185,6 +191,7 @@ readonly class WalletRepository implements WalletRepositoryInterface
             ->set('reserved_balance', ':reserved_balance')
             ->set('is_blocked', ':is_blocked')
             ->set('last_activity_at', ':last_activity_at')
+            ->set('deleted_at', ':deleted_at')
             ->where('id = :id');
 
         $this->connection->executeQuery(
@@ -194,6 +201,7 @@ readonly class WalletRepository implements WalletRepositoryInterface
                 'reserved_balance' => $wallet->getReservedBalance(),
                 'is_blocked' => (int) $wallet->isBlocked(),
                 'last_activity_at' => $wallet->getLastActivityAt()?->setTimezone(timezone: new DateTimeZone('UTC'))->format('Y-m-d H:i:s'),
+                'deleted_at' => $wallet->getDeletedAt()?->setTimezone(timezone: new DateTimeZone('UTC'))->format('Y-m-d H:i:s'),
                 'id' => $wallet->getId(),
             ]
         );
