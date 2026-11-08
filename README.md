@@ -19,6 +19,28 @@ USD/EUR pair.
 
 Earnings across all wallets are tracked via the `app:company-wallet` console command.
 
+### Rounding: who gets the fraction of a cent
+
+- Clients only send, deposit and receive **whole units of a currency**: 2 decimal places, `JPY` 0.
+- The client receives the converted amount minus the spread, **rounded down** to whole cents (or yen).
+  Everything else is the company's spread, rounded **up** to 4 decimal places. The company never gets
+  less than the formula above.
+- **Example:** 100 PLN → EUR is 23.5910 EUR at market rate. The client receives **23.43 EUR**, the company
+  books **0.1611 EUR** (the formula alone gives 0.1573).
+- A transfer that would give the client less than 1 cent (1 yen) is refused, and the money stays where it was.
+
+### How a transfer works
+
+1. **Creating a transfer does not move money yet.** The amount is put on hold on the source wallet
+   (`reservedBalance`); the balance stays the same. The client can spend only `balance - reservedBalance`.
+2. **`app:process-transactions` settles it:** the source wallet is charged, the target wallet credited
+   and the spread booked in the company wallet (in the target currency).
+3. A transfer is **rejected** (the hold is released, nothing else changes) if a wallet is missing or blocked,
+   or the funds are no longer there.
+4. **Anti-fraud:** a transfer worth **more than 15,000 EUR** (measured on the amount sent, before the spread,
+   whatever the currencies) gets the status `fraud_review` and must be approved by hand. The default answer
+   is "no", and the non-interactive mode (`-n`, e.g. cron) skips these transfers instead of deciding.
+
 ---
 
 ## Prerequisites
@@ -56,6 +78,9 @@ Apply the database schema:
 docker exec -it php-fpm php bin/console doctrine:migrations:migrate
 ```
 
+> **Important:** after pulling new code, run this command again. New code often needs the new migrations
+> (e.g. wallet deletion needs the `deleted_at` column) and fails without them.
+
 ### 4. Open the application
 
 The application is available at:
@@ -84,14 +109,51 @@ docker exec -it php-fpm composer tests
 
 ## API Endpoints
 
-All endpoints require Bearer token authentication. Obtain a token with `app:create-user`.
+All endpoints require Bearer token authentication (`401` without a valid token). Obtain a token with `app:create-user`.
 
-| Method | Path                        | Description                                                                                                                                                                            |
-|--------|-----------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `GET`  | `/api/wallets`              | List all wallets belonging to the authenticated user.                                                                                                                                  |
-| `POST` | `/api/wallets`              | Create a new wallet. Body: `{ "currency": "PLN" }`. Supported currencies: `PLN`, `EUR`, `USD`, `GBP`, `JPY`, `CHF`, `HUF`. Returns `409` if a wallet for that currency already exists. |
-| `POST` | `/api/wallets/{id}/deposit` | Deposit funds into a wallet. Body: `{ "amount": "500.00" }`. Maximum single deposit: `10000`. Returns `422` if the wallet is blocked.                                                  |
-| `POST` | `/api/wallets/transfer`     | Transfer funds between two wallets of the authenticated user (currency exchange supported). Body: `{ "fromWalletId": 1, "toWalletId": 2, "amount": "100.00" }`.                        |
+| Method   | Path                        | Description                                                                                                                                                                             |
+|----------|-----------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `GET`    | `/api/wallets`              | List all wallets belonging to the authenticated user (deleted wallets are not listed).                                                                                                 |
+| `POST`   | `/api/wallets`              | Create a new wallet. Body: `{ "currency": "PLN" }`. Supported currencies: `PLN`, `EUR`, `USD`, `GBP`, `JPY`, `CHF`, `HUF`. Returns `409` if an active wallet for that currency already exists. |
+| `POST`   | `/api/wallets/{id}/deposit` | Deposit funds into a wallet. Body: `{ "amount": "500.00" }`. Maximum single deposit: `10000`. Returns the wallet.                                                                      |
+| `POST`   | `/api/wallets/transfer`     | Transfer funds between two wallets of the authenticated user (currency exchange supported). Body: `{ "fromWalletId": 1, "toWalletId": 2, "amount": "100.00" }`. Returns `201` with the transaction (status `pending` or `fraud_review`). |
+| `DELETE` | `/api/wallets/{id}`         | Delete the user's own wallet. Returns `204` with no body. See [Deleting a wallet](#deleting-a-wallet).                                                                                 |
+
+**Wallet** response: `{ "id", "currency", "balance", "reservedBalance", "isBlocked", "lastActivityAt" }`.
+Money is returned as text with 4 decimal places, e.g. `"balance": "500.0000"`. `reservedBalance` is money
+on hold for transfers in progress.
+
+### Amounts
+
+- Send the amount as **text**: `"amount": "100.50"`. A whole JSON number (`100`) also works, a JSON number
+  with a fraction (`100.5`) is refused, because it may already be inexact.
+- Plain digits with an optional dot only: `1e3`, `10,50` or `" 10"` are refused.
+- At most 2 decimal places (`JPY`: none), and the amount must be greater than 0.
+
+### Errors
+
+Errors come as `{ "error": "message" }`.
+
+| Code  | When                                                                                                                                                                                          |
+|-------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `400` | Invalid input: missing field, invalid currency, wallet ID that is not a positive integer, invalid amount (e.g. `Amount must have at most 2 decimal places for PLN.`, `Amount must be a whole number for JPY.`, `Amount cannot exceed 10000.`, `Amount is too small to exchange.`). |
+| `401` | Missing or invalid token.                                                                                                                                                                     |
+| `404` | Wallet not found. **Also for someone else's wallet** (so its existence is not revealed) and for a deleted wallet.                                                                            |
+| `409` | Wallet already exists (create), or the wallet cannot be deleted (see below).                                                                                                                 |
+| `422` | Transfer within the same wallet, insufficient funds (`balance - reservedBalance`), or a blocked wallet.                                                                                      |
+
+### Deleting a wallet
+
+The wallet disappears from the application, but its row stays in the database, because the transaction
+history points to it. Deletion is refused with `409` while:
+
+- money is on hold for transfers in progress (`Wallet 1 has funds reserved by transfers in progress.`),
+- any transfer from or to the wallet is still `pending` or `fraud_review` (`Wallet 1 has transfers in progress.`),
+- the balance is worth **0.01 EUR or more** (`Wallet 1 still holds 12.3400 PLN. Spend or transfer it first.`).
+
+A remainder worth **less than 0.01 EUR** can never be spent (it is less than a cent after any exchange), so it
+goes to the company wallet when the wallet is deleted. A blocked wallet cannot be deleted (`422`). After deletion
+the user can open a new wallet in the same currency; it gets a new ID.
 
 A ready-to-use Postman collection is available at [`exchange-api.postman_collection.json`](./exchange-api.postman_collection.json).
 Set the `authToken` variable to the token returned by `app:create-user`.
@@ -103,7 +165,7 @@ Set the `authToken` variable to the token returned by `app:create-user`.
 | Command                    | Description                                                                                       |
 |----------------------------|---------------------------------------------------------------------------------------------------|
 | `app:create-user`          | Creates a user and returns an API token. Use this token when testing endpoints (e.g. in Postman). |
-| `app:process-transactions` | Processes pending transactions — either approves or rejects them.                                 |
+| `app:process-transactions` | Settles `pending` transfers and asks for a decision on each `fraud_review` one (default: reject). With `-n` the fraud review queue is skipped, never approved. Ends with an error code if any transfer could not be processed. |
 | `app:company-wallet`       | Displays the company wallets and shows how much the company has earned.                           |
 
 **How to run a console command:**

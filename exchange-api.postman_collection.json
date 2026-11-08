@@ -98,6 +98,20 @@
             "description": "Deposits funds into the specified wallet. Maximum single deposit: 10000. Returns 422 if the wallet is blocked."
           },
           "response": []
+        },
+        {
+          "name": "Delete Wallet",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/wallets/1",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "wallets", "1"]
+            },
+            "description": "Deletes the authenticated user's own wallet. Returns 204 on success, 404 for a missing or someone else's wallet, 409 if money or transfers in progress remain, 422 if the wallet is blocked."
+          },
+          "response": []
         }
       ]
     },
