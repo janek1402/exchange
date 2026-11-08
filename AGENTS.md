@@ -50,9 +50,14 @@ Właściciel nie jest programistą: tłumacz zmiany prostym językiem i zawsze o
 
 ### Spread i zarobek kantoru
 - Kantor zarabia na spreadzie przy każdym przewalutowaniu. Wzór jest w README.md; nie zmieniaj go bez zgody właściciela.
-- Spread zaokrąglaj zawsze w górę (na korzyść kantoru), do 4 miejsc po przecinku, jak wszystkie kwoty.
-  Dokładna wartość zostaje bez zmian. Nie zmieniaj liczby miejsc bez zgody właściciela
-  (przy 2 miejscach przelewy poniżej ok. 0,01 waluty docelowej byłyby niemożliwe).
+- Kwoty klienta (przelew, wpłata, kwota otrzymana) tylko w pełnych jednostkach waluty:
+  2 miejsca po przecinku, JPY 0 (`Currency::decimals()`). Część grosza = 400.
+- Klient dostaje kwotę po przeliczeniu i odjęciu spreadu ze wzoru, zaokrągloną W DÓŁ do pełnych groszy.
+  Cała reszta to spread kantoru, zaokrąglony W GÓRĘ do 4 miejsc. Kantor nigdy nie dostaje mniej niż wzór.
+- Przelew, w którym klient po przeliczeniu i odjęciu spreadu dostałby mniej niż 1 grosz (jen)
+  waluty docelowej, jest odrzucany (400). Pieniądze zostają na portfelu nadawcy.
+- Liczba miejsc po przecinku i kierunek zaokrągleń decydują, kto dostaje ułamek grosza: klient
+  czy kantor. Nie zmieniaj ich bez zgody właściciela, także wtedy, gdy wymaga tego test.
 - Spread z każdego rozliczonego przelewu trafia do portfela firmy (`company_wallets`).
 
 ### Portfele i dostęp
