@@ -18,6 +18,10 @@
 /.phpcs-cache
 ###< squizlabs/php_codesniffer ###
 
+# Claude Code: personal settings and temporary worktrees stay local
+/.claude/settings.local.json
+/.claude/worktrees/
+
 # IDE
 /.idea/
 /.vscode/
