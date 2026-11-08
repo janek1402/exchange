@@ -44,7 +44,7 @@ class WalletServiceTest extends TestCase
 
         self::assertSame($userId, $wallet->getUserId());
         self::assertSame($currency, $wallet->getCurrency());
-        self::assertSame(0.0, $wallet->getBalance());
+        self::assertSame('0.0000', $wallet->getBalance());
         self::assertFalse($wallet->isBlocked());
     }
 

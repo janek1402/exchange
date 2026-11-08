@@ -122,11 +122,12 @@ readonly class WalletRepository implements WalletRepositoryInterface
             id: (int) $row['id'],
             userId: (int) $row['user_id'],
             currency: Currency::from($row['currency']),
-            balance: (float) $row['balance'],
+            // DECIMAL arrives as a string; a float cast would round it.
+            balance: (string) $row['balance'],
             isBlocked: (bool) $row['is_blocked'],
             lastActivityAt: null !== $row['last_activity_at'] ? new DateTimeImmutable($row['last_activity_at']) : null,
             createdAt: new DateTimeImmutable($row['created_at']),
-            reservedBalance: (float) $row['reserved_balance'],
+            reservedBalance: (string) $row['reserved_balance'],
         );
     }
 

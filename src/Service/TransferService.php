@@ -6,17 +6,20 @@ namespace App\Service;
 
 use App\Entity\Transaction;
 use App\Exception\InsufficientFundsException;
+use App\Exception\InvalidAmountException;
 use App\Exception\SameWalletTransferException;
 use App\Exception\WalletBlockedException;
 use App\Exception\WalletNotFoundException;
+use App\Money\Amount;
 use App\Repository\DatabaseTransactionInterface;
 use App\Repository\TransactionRepositoryInterface;
 use App\Repository\WalletRepositoryInterface;
 use DateTimeImmutable;
+use RoundingMode;
 
 readonly class TransferService
 {
-    private const int ANTI_FRAUD_THRESHOLD_EUR = 15_000;
+    private const string ANTI_FRAUD_THRESHOLD_EUR = '15000';
 
     public function __construct(
         private WalletRepositoryInterface $walletRepository,
@@ -33,6 +36,8 @@ readonly class TransferService
         int $toWalletId,
         string $fromAmount,
     ): Transaction {
+        Amount::assertValid($fromAmount);
+
         return $this->databaseTransaction->run(function () use ($userId, $fromWalletId, $toWalletId, $fromAmount): Transaction {
             $this->walletRepository->lockForUpdate($fromWalletId, $toWalletId);
 
@@ -58,22 +63,24 @@ readonly class TransferService
                 throw new WalletBlockedException($toWalletId);
             }
 
-            if ((float) $fromAmount > $fromWallet->getBalance() - $fromWallet->getReservedBalance()) {
+            if (bccomp($fromAmount, $fromWallet->getAvailableBalance(), Amount::SCALE) > 0) {
                 throw new InsufficientFundsException($fromWalletId);
             }
 
             $fromCurrency = $fromWallet->getCurrency();
             $toCurrency = $toWallet->getCurrency();
 
-            $exchangeRate = $this->exchangeRateService->getExchangeRateBetween($fromCurrency, $toCurrency);
-            $rawToAmount = (float) $fromAmount * $exchangeRate;
+            $rawToAmount = $this->exchangeRateService->convert($fromAmount, $fromCurrency, $toCurrency);
             $spread = $this->spreadService->calculateSpread($rawToAmount, $fromCurrency, $toCurrency);
-            $toAmount = $rawToAmount - (float) $spread;
+            $toAmount = bcround(bcsub($rawToAmount, $spread, 12), Amount::SCALE, RoundingMode::HalfAwayFromZero);
 
-            $toAmountFormatted = number_format($toAmount, 4, '.', '');
+            // The client would pay and receive nothing (or less than nothing once the spread is taken).
+            if (bccomp($toAmount, '0', Amount::SCALE) <= 0) {
+                throw new InvalidAmountException('Amount is too small to exchange.');
+            }
 
             // Funds stay on hold until the transaction is completed or rejected.
-            $fromWallet->reserve((float) $fromAmount);
+            $fromWallet->reserve($fromAmount);
 
             $now = new DateTimeImmutable();
             $fromWallet->setLastActivityAt($now);
@@ -86,12 +93,17 @@ readonly class TransferService
                 fromWalletId: $fromWalletId,
                 toWalletId: $toWalletId,
                 fromAmount: $fromAmount,
-                toAmount: $toAmountFormatted,
+                toAmount: $toAmount,
                 fromCurrency: $fromCurrency,
                 toCurrency: $toCurrency,
                 spread: $spread,
-                exchangeRate: number_format($exchangeRate, 6, '.', ''),
-                requiresAntiFraudCheck: $this->exchangeRateService->getValueInEur((float) $fromAmount, $fromCurrency) > self::ANTI_FRAUD_THRESHOLD_EUR,
+                // Stored for history only; the amounts above come from convert().
+                exchangeRate: number_format($this->exchangeRateService->getExchangeRateBetween($fromCurrency, $toCurrency), 6, '.', ''),
+                requiresAntiFraudCheck: bccomp(
+                    $this->exchangeRateService->getValueInEur($fromAmount, $fromCurrency),
+                    self::ANTI_FRAUD_THRESHOLD_EUR,
+                    12,
+                ) > 0,
             );
 
             $this->transactionRepository->save($transaction);

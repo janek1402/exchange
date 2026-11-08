@@ -40,8 +40,8 @@ class MoneyConsistencyTest extends TestCase
     {
         $this->database = new InMemoryDatabase();
 
-        $this->database->wallets->rows[self::PLN_WALLET_ID] = $this->wallet(self::PLN_WALLET_ID, Currency::PLN, 1000.0);
-        $this->database->wallets->rows[self::EUR_WALLET_ID] = $this->wallet(self::EUR_WALLET_ID, Currency::EUR, 500.0);
+        $this->database->wallets->rows[self::PLN_WALLET_ID] = $this->wallet(self::PLN_WALLET_ID, Currency::PLN, '1000.0');
+        $this->database->wallets->rows[self::EUR_WALLET_ID] = $this->wallet(self::EUR_WALLET_ID, Currency::EUR, '500.0');
 
         $this->transferService = new TransferService(
             $this->database->wallets,
@@ -78,8 +78,8 @@ class MoneyConsistencyTest extends TestCase
         } catch (RuntimeException) {
         }
 
-        self::assertSame(1000.0, $this->pln()->getBalance());
-        self::assertSame(0.0, $this->pln()->getReservedBalance());
+        self::assertSame('1000.0000', $this->pln()->getBalance());
+        self::assertSame('0.0000', $this->pln()->getReservedBalance());
         self::assertSame([], $this->database->transactions->rows);
     }
 
@@ -104,16 +104,16 @@ class MoneyConsistencyTest extends TestCase
         } catch (RuntimeException) {
         }
 
-        self::assertSame(1000.0, $this->pln()->getBalance());
-        self::assertSame(100.0, $this->pln()->getReservedBalance());
-        self::assertSame(500.0, $this->eur()->getBalance());
+        self::assertSame('1000.0000', $this->pln()->getBalance());
+        self::assertSame('100.0000', $this->pln()->getReservedBalance());
+        self::assertSame('500.0000', $this->eur()->getBalance());
         self::assertSame(TransactionStatus::PENDING, $this->stored($transaction)->getStatus());
         self::assertSame([], $this->database->companyWallets->booked);
 
         $this->processor->complete($transaction);
 
-        self::assertSame(900.0, $this->pln()->getBalance());
-        self::assertSame(0.0, $this->pln()->getReservedBalance());
+        self::assertSame('900.0000', $this->pln()->getBalance());
+        self::assertSame('0.0000', $this->pln()->getReservedBalance());
         self::assertSame(TransactionStatus::COMPLETED, $this->stored($transaction)->getStatus());
         self::assertCount(1, $this->database->companyWallets->booked);
     }
@@ -137,7 +137,7 @@ class MoneyConsistencyTest extends TestCase
         } catch (RuntimeException) {
         }
 
-        self::assertSame(100.0, $this->pln()->getReservedBalance());
+        self::assertSame('100.0000', $this->pln()->getReservedBalance());
         self::assertSame(TransactionStatus::PENDING, $this->stored($transaction)->getStatus());
     }
 
@@ -153,7 +153,7 @@ class MoneyConsistencyTest extends TestCase
         } catch (RuntimeException) {
         }
 
-        self::assertSame(100.0, $this->pln()->getReservedBalance());
+        self::assertSame('100.0000', $this->pln()->getReservedBalance());
         self::assertSame(TransactionStatus::PENDING, $this->stored($transaction)->getStatus());
     }
 
@@ -171,8 +171,8 @@ class MoneyConsistencyTest extends TestCase
         } catch (InvalidTransactionStateException) {
         }
 
-        self::assertSame(900.0, $this->pln()->getBalance());
-        self::assertSame(0.0, $this->pln()->getReservedBalance());
+        self::assertSame('900.0000', $this->pln()->getBalance());
+        self::assertSame('0.0000', $this->pln()->getReservedBalance());
         self::assertCount(1, $this->database->companyWallets->booked);
     }
 
@@ -248,13 +248,13 @@ class MoneyConsistencyTest extends TestCase
             self::assertSame(sprintf('Wallet %d is blocked.', $blockedWalletId), $e->getMessage());
         }
 
-        self::assertSame(0.0, $this->pln()->getReservedBalance());
+        self::assertSame('0.0000', $this->pln()->getReservedBalance());
         self::assertSame([], $this->database->transactions->rows);
     }
 
     public function testBlockedWalletOfAnotherUserLooksLikeItDoesNotExist(): void
     {
-        $wallet = new Wallet(3, 2, Currency::USD, 0.0, true, null, new DateTimeImmutable());
+        $wallet = new Wallet(3, 2, Currency::USD, '0.0', true, null, new DateTimeImmutable());
         $this->database->wallets->rows[3] = $wallet;
 
         $this->expectException(WalletNotFoundException::class);
@@ -273,9 +273,9 @@ class MoneyConsistencyTest extends TestCase
 
         self::assertSame(TransactionStatus::REJECTED, $this->stored($transaction)->getStatus());
         self::assertSame(TransactionStatus::REJECTED, $transaction->getStatus());
-        self::assertSame(1000.0, $this->pln()->getBalance());
-        self::assertSame(0.0, $this->pln()->getReservedBalance());
-        self::assertSame(500.0, $this->eur()->getBalance());
+        self::assertSame('1000.0000', $this->pln()->getBalance());
+        self::assertSame('0.0000', $this->pln()->getReservedBalance());
+        self::assertSame('500.0000', $this->eur()->getBalance());
         self::assertSame([], $this->database->companyWallets->booked);
     }
 
@@ -286,7 +286,7 @@ class MoneyConsistencyTest extends TestCase
 
         $this->processor->reject($transaction);
 
-        self::assertSame(0.0, $this->pln()->getReservedBalance());
+        self::assertSame('0.0000', $this->pln()->getReservedBalance());
         self::assertTrue($this->pln()->isBlocked());
     }
 
@@ -295,7 +295,7 @@ class MoneyConsistencyTest extends TestCase
         return $this->transferService->transfer(self::USER_ID, self::PLN_WALLET_ID, self::EUR_WALLET_ID, $amount);
     }
 
-    private function wallet(int $id, Currency $currency, float $balance): Wallet
+    private function wallet(int $id, Currency $currency, string $balance): Wallet
     {
         return new Wallet($id, self::USER_ID, $currency, $balance, false, null, new DateTimeImmutable());
     }

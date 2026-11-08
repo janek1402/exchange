@@ -47,8 +47,8 @@ class TransferAntiFraudThresholdTest extends TestCase
         $wallets
             ->method('findById')
             ->willReturnMap([
-                [1, new Wallet(1, 1, $from, 1_000_000.0, false, null, new DateTimeImmutable())],
-                [2, new Wallet(2, 1, $to, 0.0, false, null, new DateTimeImmutable())],
+                [1, new Wallet(1, 1, $from, '1000000.0', false, null, new DateTimeImmutable())],
+                [2, new Wallet(2, 1, $to, '0.0', false, null, new DateTimeImmutable())],
             ]);
 
         $service = new TransferService(

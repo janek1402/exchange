@@ -9,6 +9,7 @@ use App\Entity\Wallet;
 use App\Enum\Currency;
 use App\Enum\TransactionStatus;
 use App\Exception\InsufficientFundsException;
+use App\Exception\InvalidAmountException;
 use App\Exception\InvalidTransactionStateException;
 use App\Service\ExchangeRateService;
 use App\Service\SpreadService;
@@ -16,6 +17,7 @@ use App\Service\TransactionProcessorService;
 use App\Service\TransferService;
 use App\Tests\Support\InMemoryCompanyWalletRepository;
 use App\Tests\Support\InMemoryDatabase;
+use App\Tests\Support\InMemoryTransactionRepository;
 use App\Tests\Support\InMemoryWalletRepository;
 use DateTimeImmutable;
 use PHPUnit\Framework\TestCase;
@@ -31,6 +33,7 @@ class TransferLifecycleTest extends TestCase
 
     private InMemoryWalletRepository $wallets;
     private InMemoryCompanyWalletRepository $companyWallets;
+    private InMemoryTransactionRepository $transactions;
     private TransferService $transferService;
     private TransactionProcessorService $processor;
 
@@ -39,9 +42,10 @@ class TransferLifecycleTest extends TestCase
         $database = new InMemoryDatabase();
         $this->wallets = $database->wallets;
         $this->companyWallets = $database->companyWallets;
+        $this->transactions = $database->transactions;
 
-        $this->wallets->rows[self::FROM_WALLET_ID] = new Wallet(self::FROM_WALLET_ID, 1, Currency::PLN, 1000.0, false, null, new DateTimeImmutable());
-        $this->wallets->rows[self::TO_WALLET_ID] = new Wallet(self::TO_WALLET_ID, 1, Currency::EUR, 0.0, false, null, new DateTimeImmutable());
+        $this->wallets->rows[self::FROM_WALLET_ID] = new Wallet(self::FROM_WALLET_ID, 1, Currency::PLN, '1000.0', false, null, new DateTimeImmutable());
+        $this->wallets->rows[self::TO_WALLET_ID] = new Wallet(self::TO_WALLET_ID, 1, Currency::EUR, '0.0', false, null, new DateTimeImmutable());
 
         $this->transferService = new TransferService($this->wallets, $database->transactions, new ExchangeRateService(), new SpreadService(), $database);
         $this->processor = new TransactionProcessorService($this->wallets, $database->transactions, $this->companyWallets, $database);
@@ -102,7 +106,7 @@ class TransferLifecycleTest extends TestCase
 
     public function testFraudReviewBooksSpreadOnlyAfterApproval(): void
     {
-        $this->wallets->rows[self::FROM_WALLET_ID]->setBalance(100000.0);
+        $this->wallets->rows[self::FROM_WALLET_ID]->setBalance('100000.0');
 
         $transaction = $this->transfer('100000');
         self::assertSame(TransactionStatus::FRAUD_REVIEW, $transaction->getStatus());
@@ -130,7 +134,7 @@ class TransferLifecycleTest extends TestCase
     public function testCompleteBooksNoSpreadWhenBalanceIsTooLow(): void
     {
         $transaction = $this->transfer('100');
-        $this->wallets->rows[self::FROM_WALLET_ID]->setBalance(50.0);
+        $this->wallets->rows[self::FROM_WALLET_ID]->setBalance('50.0');
 
         $this->processor->complete($transaction);
 
@@ -153,37 +157,37 @@ class TransferLifecycleTest extends TestCase
     {
         $this->transfer('100');
 
-        self::assertSame(1000.0, $this->from()->getBalance());
-        self::assertSame(100.0, $this->from()->getReservedBalance());
-        self::assertSame(0.0, $this->to()->getBalance());
+        self::assertSame('1000.0000', $this->from()->getBalance());
+        self::assertSame('100.0000', $this->from()->getReservedBalance());
+        self::assertSame('0.0000', $this->to()->getBalance());
     }
 
     public function testCompleteMovesFundsExactlyOnce(): void
     {
         $this->processor->complete($this->transfer('100'));
 
-        self::assertSame(900.0, $this->from()->getBalance());
-        self::assertSame(0.0, $this->from()->getReservedBalance());
-        self::assertSame(23.431, $this->to()->getBalance());
+        self::assertSame('900.0000', $this->from()->getBalance());
+        self::assertSame('0.0000', $this->from()->getReservedBalance());
+        self::assertSame('23.4310', $this->to()->getBalance());
     }
 
     public function testRejectReturnsFundsToSender(): void
     {
         $this->processor->reject($this->transfer('100'));
 
-        self::assertSame(1000.0, $this->from()->getBalance());
-        self::assertSame(0.0, $this->from()->getReservedBalance());
-        self::assertSame(0.0, $this->to()->getBalance());
+        self::assertSame('1000.0000', $this->from()->getBalance());
+        self::assertSame('0.0000', $this->from()->getReservedBalance());
+        self::assertSame('0.0000', $this->to()->getBalance());
     }
 
     public function testRecipientGetsNothingBeforeFraudReviewApproval(): void
     {
-        $this->wallets->rows[self::FROM_WALLET_ID]->setBalance(100000.0);
+        $this->wallets->rows[self::FROM_WALLET_ID]->setBalance('100000.0');
 
         $transaction = $this->transfer('100000');
 
         self::assertSame(TransactionStatus::FRAUD_REVIEW, $transaction->getStatus());
-        self::assertSame(0.0, $this->to()->getBalance());
+        self::assertSame('0.0000', $this->to()->getBalance());
     }
 
     public function testReservedFundsCannotBeSpentTwice(): void
@@ -206,8 +210,8 @@ class TransferLifecycleTest extends TestCase
         } catch (InvalidTransactionStateException) {
         }
 
-        self::assertSame(900.0, $this->from()->getBalance());
-        self::assertSame(23.431, $this->to()->getBalance());
+        self::assertSame('900.0000', $this->from()->getBalance());
+        self::assertSame('23.4310', $this->to()->getBalance());
     }
 
     public function testRejectingCompletedTransactionDoesNotChangeBalances(): void
@@ -222,20 +226,20 @@ class TransferLifecycleTest extends TestCase
         }
 
         self::assertSame(TransactionStatus::COMPLETED, $transaction->getStatus());
-        self::assertSame(900.0, $this->from()->getBalance());
+        self::assertSame('900.0000', $this->from()->getBalance());
     }
 
     public function testCompleteRejectsAndReleasesWhenBalanceIsTooLow(): void
     {
         $transaction = $this->transfer('100');
-        $this->wallets->rows[self::FROM_WALLET_ID]->setBalance(50.0);
+        $this->wallets->rows[self::FROM_WALLET_ID]->setBalance('50.0');
 
         $this->processor->complete($transaction);
 
         self::assertSame(TransactionStatus::REJECTED, $transaction->getStatus());
-        self::assertSame(50.0, $this->from()->getBalance());
-        self::assertSame(0.0, $this->from()->getReservedBalance());
-        self::assertSame(0.0, $this->to()->getBalance());
+        self::assertSame('50.0000', $this->from()->getBalance());
+        self::assertSame('0.0000', $this->from()->getReservedBalance());
+        self::assertSame('0.0000', $this->to()->getBalance());
     }
 
     public function testCompleteReleasesFundsWhenTargetWalletIsMissing(): void
@@ -246,8 +250,44 @@ class TransferLifecycleTest extends TestCase
         $this->processor->complete($transaction);
 
         self::assertSame(TransactionStatus::REJECTED, $transaction->getStatus());
-        self::assertSame(1000.0, $this->from()->getBalance());
-        self::assertSame(0.0, $this->from()->getReservedBalance());
+        self::assertSame('1000.0000', $this->from()->getBalance());
+        self::assertSame('0.0000', $this->from()->getReservedBalance());
+    }
+
+    public function testWholeAvailableBalanceCanBeSpentToTheLastCent(): void
+    {
+        $this->transfer('999.99');
+        $this->transfer('0.01');
+
+        self::assertSame('1000.0000', $this->from()->getReservedBalance());
+        self::assertSame('0.0000', $this->from()->getAvailableBalance());
+
+        $this->expectException(InsufficientFundsException::class);
+
+        $this->transfer('0.01');
+    }
+
+    public function testTransferIsRefusedWhenConvertedAmountRoundsToZero(): void
+    {
+        // 0.0001 PLN is about 0.00002 EUR: the client would pay and receive nothing.
+        try {
+            $this->transfer('0.0001');
+            self::fail('Expected InvalidAmountException.');
+        } catch (InvalidAmountException $e) {
+            self::assertSame('Amount is too small to exchange.', $e->getMessage());
+        }
+
+        self::assertSame('0.0000', $this->from()->getReservedBalance());
+        self::assertSame([], $this->transactions->rows);
+    }
+
+    public function testCompletedTransferBalancesAreExact(): void
+    {
+        $this->processor->complete($this->transfer('0.1'));
+        $this->processor->complete($this->transfer('0.2'));
+
+        self::assertSame('999.7000', $this->from()->getBalance());
+        self::assertSame('0.0000', $this->from()->getReservedBalance());
     }
 
     private function transfer(string $amount): Transaction

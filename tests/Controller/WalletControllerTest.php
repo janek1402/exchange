@@ -11,6 +11,7 @@ use App\Entity\Wallet;
 use App\Enum\Currency;
 use App\Enum\TransactionStatus;
 use App\Exception\InsufficientFundsException;
+use App\Exception\InvalidAmountException;
 use App\Exception\SameWalletTransferException;
 use App\Exception\WalletAlreadyExistsException;
 use App\Exception\WalletBlockedException;
@@ -21,6 +22,7 @@ use App\Service\TransferService;
 use App\Service\WalletService;
 use DateTimeImmutable;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Request;
 use Throwable;
@@ -245,6 +247,138 @@ class WalletControllerTest extends TestCase
 
         $data = json_decode($response->getContent(), true, 512, JSON_THROW_ON_ERROR);
         self::assertSame('Amount must be a positive number.', $data['error']);
+    }
+
+    /**
+     * @throws Throwable
+     */
+    #[DataProvider('invalidWalletIds')]
+    public function testTransferReturnsBadRequestWhenWalletIdInvalid(string $field, mixed $id): void
+    {
+        $user = new User(1, 'test@example.com', ['ROLE_USER'], new DateTimeImmutable());
+
+        $this->transferService->expects(self::never())->method('transfer');
+
+        $body = ['fromWalletId' => 1, 'toWalletId' => 2, 'amount' => '100.00'];
+        $body[$field] = $id;
+
+        $response = $this->controller->transfer(new Request(content: json_encode($body, JSON_THROW_ON_ERROR)), $user);
+
+        self::assertSame(400, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true, 512, JSON_THROW_ON_ERROR);
+        self::assertSame(sprintf('%s must be a positive integer.', $field), $data['error']);
+    }
+
+    public static function invalidWalletIds(): iterable
+    {
+        // Before the fix "abc" was cast to wallet 0 and reported as a missing wallet.
+        yield 'text' => ['fromWalletId', 'abc'];
+        yield 'number followed by text' => ['toWalletId', '2abc'];
+        yield 'zero' => ['fromWalletId', 0];
+        yield 'negative' => ['toWalletId', -2];
+        yield 'fraction' => ['fromWalletId', 1.5];
+        yield 'list' => ['toWalletId', [2]];
+    }
+
+    /**
+     * @throws Throwable
+     */
+    public function testTransferAcceptsWalletIdsSentAsDigitStrings(): void
+    {
+        $user = new User(1, 'test@example.com', ['ROLE_USER'], new DateTimeImmutable());
+        $transaction = new Transaction(
+            id: 10,
+            fromWalletId: 1,
+            toWalletId: 2,
+            fromAmount: '100.00',
+            toAmount: '25.1234',
+            fromCurrency: Currency::PLN,
+            toCurrency: Currency::EUR,
+            spread: '0.13',
+            exchangeRate: '0.250000',
+            status: TransactionStatus::PENDING,
+            requiresAntiFraudCheck: false,
+            antiFraudCheckedAt: null,
+            createdAt: new DateTimeImmutable(),
+        );
+
+        $this->transferService
+            ->expects(self::once())
+            ->method('transfer')
+            ->with(1, 1, 2, '100.00')
+            ->willReturn($transaction);
+
+        $request = new Request(content: json_encode(['fromWalletId' => '1', 'toWalletId' => '2', 'amount' => '100.00'], JSON_THROW_ON_ERROR));
+
+        self::assertSame(201, $this->controller->transfer($request, $user)->getStatusCode());
+    }
+
+    /**
+     * @throws Throwable
+     */
+    #[DataProvider('invalidAmounts')]
+    public function testTransferReturnsBadRequestForAmountTheLedgerCannotHold(mixed $amount, string $message): void
+    {
+        $user = new User(1, 'test@example.com', ['ROLE_USER'], new DateTimeImmutable());
+
+        $this->transferService->expects(self::never())->method('transfer');
+
+        $request = new Request(content: json_encode(['fromWalletId' => 1, 'toWalletId' => 2, 'amount' => $amount], JSON_THROW_ON_ERROR));
+        $response = $this->controller->transfer($request, $user);
+
+        self::assertSame(400, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true, 512, JSON_THROW_ON_ERROR);
+        self::assertSame($message, $data['error']);
+    }
+
+    /**
+     * @throws Throwable
+     */
+    #[DataProvider('invalidAmounts')]
+    public function testDepositReturnsBadRequestForAmountTheLedgerCannotHold(mixed $amount, string $message): void
+    {
+        $user = new User(1, 'test@example.com', ['ROLE_USER'], new DateTimeImmutable());
+
+        $this->depositService->expects(self::never())->method('deposit');
+
+        $request = new Request(content: json_encode(['amount' => $amount], JSON_THROW_ON_ERROR));
+        $response = $this->controller->deposit(5, $request, $user);
+
+        self::assertSame(400, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true, 512, JSON_THROW_ON_ERROR);
+        self::assertSame($message, $data['error']);
+    }
+
+    public static function invalidAmounts(): iterable
+    {
+        // Before the fix this amount was accepted and then crashed with 500 on reservation.
+        yield 'more than 4 decimals' => ['0.00001', 'Amount must have at most 4 decimal places.'];
+        yield 'scientific notation' => ['1e3', 'Amount must be a positive number.'];
+        // A JSON number is a float in PHP, so 0.1 + 0.2 style errors would already be in it.
+        yield 'JSON number instead of text' => [100.5, 'Amount must be a string, e.g. "100.00".'];
+    }
+
+    /**
+     * @throws Throwable
+     */
+    public function testTransferReturnsBadRequestWhenServiceRejectsAmount(): void
+    {
+        $user = new User(1, 'test@example.com', ['ROLE_USER'], new DateTimeImmutable());
+
+        $this->transferService
+            ->method('transfer')
+            ->willThrowException(new InvalidAmountException('Amount is too small to exchange.'));
+
+        $request = new Request(content: json_encode(['fromWalletId' => 1, 'toWalletId' => 2, 'amount' => '0.0001'], JSON_THROW_ON_ERROR));
+        $response = $this->controller->transfer($request, $user);
+
+        self::assertSame(400, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true, 512, JSON_THROW_ON_ERROR);
+        self::assertSame('Amount is too small to exchange.', $data['error']);
     }
 
     /**

@@ -35,7 +35,7 @@ class ShowCompanyWalletCommand extends Command
         }
 
         $rows = array_map(
-            static fn ($wallet) => [$wallet->getCurrency()->value, number_format($wallet->getBalance(), 4, '.', '')],
+            static fn ($wallet) => [$wallet->getCurrency()->value, $wallet->getBalance()],
             $wallets,
         );
 

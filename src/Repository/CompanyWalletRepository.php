@@ -88,7 +88,7 @@ readonly class CompanyWalletRepository implements CompanyWalletRepositoryInterfa
         return new CompanyWallet(
             id: (int) $row['id'],
             currency: Currency::from($row['currency']),
-            balance: (float) $row['balance'],
+            balance: (string) $row['balance'],
             createdAt: new DateTimeImmutable($row['created_at']),
             updatedAt: new DateTimeImmutable($row['updated_at']),
         );

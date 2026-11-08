@@ -9,10 +9,12 @@ use App\Dto\WalletResponse;
 use App\Entity\User;
 use App\Enum\Currency;
 use App\Exception\InsufficientFundsException;
+use App\Exception\InvalidAmountException;
 use App\Exception\SameWalletTransferException;
 use App\Exception\WalletAlreadyExistsException;
 use App\Exception\WalletBlockedException;
 use App\Exception\WalletNotFoundException;
+use App\Money\Amount;
 use App\Repository\WalletRepositoryInterface;
 use App\Service\DepositService;
 use App\Service\TransferService;
@@ -86,17 +88,27 @@ final class WalletController extends AbstractController
             }
         }
 
-        if (!is_numeric($data['amount']) || (float) $data['amount'] <= 0) {
-            return new JsonResponse(['error' => 'Amount must be a positive number.'], Response::HTTP_BAD_REQUEST);
+        $walletIds = [];
+        foreach (['fromWalletId', 'toWalletId'] as $field) {
+            $walletIds[$field] = $this->parseWalletId($data[$field]);
+
+            if (null === $walletIds[$field]) {
+                return new JsonResponse(['error' => sprintf('%s must be a positive integer.', $field)], Response::HTTP_BAD_REQUEST);
+            }
         }
 
         try {
+            $amount = $this->parseAmount($data['amount']);
+            Amount::assertValid($amount);
+
             $transaction = $this->transferService->transfer(
                 $user->getIdNotNull(),
-                (int) $data['fromWalletId'],
-                (int) $data['toWalletId'],
-                (string) $data['amount'],
+                $walletIds['fromWalletId'],
+                $walletIds['toWalletId'],
+                $amount,
             );
+        } catch (InvalidAmountException $e) {
+            return new JsonResponse(['error' => $e->getMessage()], Response::HTTP_BAD_REQUEST);
         } catch (WalletNotFoundException $e) {
             return new JsonResponse(['error' => $e->getMessage()], Response::HTTP_NOT_FOUND);
         } catch (SameWalletTransferException|InsufficientFundsException|WalletBlockedException $e) {
@@ -109,7 +121,7 @@ final class WalletController extends AbstractController
     /**
      * @throws JsonException
      */
-    #[Route('/{id}/deposit', methods: ['POST'])]
+    #[Route('/{id}/deposit', requirements: ['id' => '\d+'], methods: ['POST'])]
     public function deposit(int $id, Request $request, #[CurrentUser] User $user): JsonResponse
     {
         $data = json_decode($request->getContent(), true, 512, JSON_THROW_ON_ERROR) ?? [];
@@ -118,20 +130,17 @@ final class WalletController extends AbstractController
             return new JsonResponse(['error' => 'Missing required field: amount.'], Response::HTTP_BAD_REQUEST);
         }
 
-        if (!is_numeric($data['amount']) || (float) $data['amount'] <= 0) {
-            return new JsonResponse(['error' => 'Amount must be a positive number.'], Response::HTTP_BAD_REQUEST);
-        }
-
-        if ((float) $data['amount'] > DepositService::MAX_AMOUNT) {
-            return new JsonResponse(['error' => sprintf('Amount cannot exceed %s.', DepositService::MAX_AMOUNT)], Response::HTTP_BAD_REQUEST);
-        }
-
         try {
+            $amount = $this->parseAmount($data['amount']);
+            DepositService::assertValidAmount($amount);
+
             $wallet = $this->depositService->deposit(
                 $user->getIdNotNull(),
                 $id,
-                (string) $data['amount'],
+                $amount,
             );
+        } catch (InvalidAmountException $e) {
+            return new JsonResponse(['error' => $e->getMessage()], Response::HTTP_BAD_REQUEST);
         } catch (WalletNotFoundException $e) {
             return new JsonResponse(['error' => $e->getMessage()], Response::HTTP_NOT_FOUND);
         } catch (WalletBlockedException $e) {
@@ -139,5 +148,34 @@ final class WalletController extends AbstractController
         }
 
         return new JsonResponse(new WalletResponse($wallet));
+    }
+
+    /**
+     * A JSON number becomes a float in PHP and may already be off (0.1 + 0.2 style), so only
+     * text and whole numbers are accepted. The services validate the value itself.
+     *
+     * @throws InvalidAmountException
+     */
+    private function parseAmount(mixed $amount): string
+    {
+        if (is_int($amount)) {
+            return (string) $amount;
+        }
+
+        if (!is_string($amount)) {
+            throw new InvalidAmountException('Amount must be a string, e.g. "100.00".');
+        }
+
+        return $amount;
+    }
+
+    /** Without this, "abc" would be cast to wallet 0 and reported as a missing wallet. */
+    private function parseWalletId(mixed $id): ?int
+    {
+        if (is_string($id) && 1 === preg_match('/^[1-9]\d{0,17}\z/', $id)) {
+            $id = (int) $id;
+        }
+
+        return is_int($id) && $id > 0 ? $id : null;
     }
 }

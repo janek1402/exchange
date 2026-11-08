@@ -17,7 +17,7 @@ class CompanyWalletTest extends TestCase
 
         $this->assertNull($wallet->getId());
         $this->assertSame(Currency::EUR, $wallet->getCurrency());
-        $this->assertSame(0.0, $wallet->getBalance());
+        $this->assertSame('0.0000', $wallet->getBalance());
     }
 
     public function testCreateSetsTimestamps(): void
@@ -42,18 +42,18 @@ class CompanyWalletTest extends TestCase
     public function testSetBalance(): void
     {
         $wallet = CompanyWallet::create(Currency::PLN);
-        $wallet->setBalance(250.75);
+        $wallet->setBalance('250.75');
 
-        $this->assertSame(250.75, $wallet->getBalance());
+        $this->assertSame('250.7500', $wallet->getBalance());
     }
 
     public function testSetBalanceToZero(): void
     {
         $wallet = CompanyWallet::create(Currency::PLN);
-        $wallet->setBalance(100.0);
-        $wallet->setBalance(0.0);
+        $wallet->setBalance('100.0');
+        $wallet->setBalance('0.0');
 
-        $this->assertSame(0.0, $wallet->getBalance());
+        $this->assertSame('0.0000', $wallet->getBalance());
     }
 
     public function testGetCurrency(): void

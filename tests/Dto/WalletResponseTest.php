@@ -21,7 +21,7 @@ class WalletResponseTest extends TestCase
 
         self::assertNull($data['id']);
         self::assertSame('PLN', $data['currency']);
-        self::assertSame(0.0, $data['balance']);
+        self::assertSame('0.0000', $data['balance']);
         self::assertFalse($data['isBlocked']);
         self::assertNull($data['lastActivityAt']);
     }
@@ -40,11 +40,21 @@ class WalletResponseTest extends TestCase
     public function testJsonSerializeIncludesReservedBalance(): void
     {
         $wallet = Wallet::create(1, Currency::PLN);
-        $wallet->reserve(25.0);
+        $wallet->reserve('25.0');
 
         $data = new WalletResponse($wallet)->jsonSerialize();
 
-        self::assertSame(25.0, $data['reservedBalance']);
+        self::assertSame('25.0000', $data['reservedBalance']);
+    }
+
+    public function testBalancesAreSentAsExactDecimalStrings(): void
+    {
+        $wallet = new Wallet(1, 1, Currency::PLN, '0.3000', false, null, new DateTimeImmutable(), '0.1000');
+
+        $json = json_encode(new WalletResponse($wallet), JSON_THROW_ON_ERROR);
+
+        self::assertStringContainsString('"balance":"0.3000"', $json);
+        self::assertStringContainsString('"reservedBalance":"0.1000"', $json);
     }
 
     public function testJsonSerializeWithBlockedWallet(): void

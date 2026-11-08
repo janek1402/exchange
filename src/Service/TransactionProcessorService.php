@@ -8,6 +8,7 @@ use App\Entity\Transaction;
 use App\Entity\Wallet;
 use App\Enum\TransactionStatus;
 use App\Exception\InvalidTransactionStateException;
+use App\Money\Amount;
 use App\Repository\CompanyWalletRepositoryInterface;
 use App\Repository\DatabaseTransactionInterface;
 use App\Repository\TransactionRepositoryInterface;
@@ -33,14 +34,14 @@ final readonly class TransactionProcessorService
 
             $fromWallet = $this->walletRepository->findById($transaction->getFromWalletId());
             $toWallet = $this->walletRepository->findById($transaction->getToWalletId());
-            $fromAmount = (float) $transaction->getFromAmount();
+            $fromAmount = $transaction->getFromAmount();
 
             if (
                 null === $fromWallet
                 || null === $toWallet
                 || $fromWallet->isBlocked()
                 || $toWallet->isBlocked()
-                || $fromAmount > $fromWallet->getBalance()
+                || bccomp($fromAmount, $fromWallet->getBalance(), Amount::SCALE) > 0
             ) {
                 $this->markRejected($transaction, $fromWallet);
 
@@ -48,10 +49,10 @@ final readonly class TransactionProcessorService
             }
 
             $fromWallet->release($fromAmount);
-            $fromWallet->setBalance($fromWallet->getBalance() - $fromAmount);
+            $fromWallet->setBalance(bcsub($fromWallet->getBalance(), $fromAmount, Amount::SCALE));
             $fromWallet->setLastActivityAt(new DateTimeImmutable());
 
-            $toWallet->setBalance($toWallet->getBalance() + (float) $transaction->getToAmount());
+            $toWallet->setBalance(bcadd($toWallet->getBalance(), $transaction->getToAmount(), Amount::SCALE));
             $toWallet->setLastActivityAt(new DateTimeImmutable());
 
             $this->walletRepository->save($fromWallet);
@@ -99,7 +100,7 @@ final readonly class TransactionProcessorService
     private function markRejected(Transaction $transaction, ?Wallet $fromWallet): void
     {
         if (null !== $fromWallet) {
-            $fromWallet->release((float) $transaction->getFromAmount());
+            $fromWallet->release($transaction->getFromAmount());
             $this->walletRepository->save($fromWallet);
         }
 

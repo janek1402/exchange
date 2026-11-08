@@ -5,25 +5,31 @@ declare(strict_types=1);
 namespace App\Entity;
 
 use App\Enum\Currency;
+use App\Money\Amount;
 use DateTimeImmutable;
 use InvalidArgumentException;
 use LogicException;
 
 class Wallet
 {
-    /** Same scale as the DECIMAL(15,4) amounts stored on transactions. */
-    private const int LEDGER_PRECISION = 4;
+    /** Decimal string with 4 places, see Amount. */
+    private string $balance;
+
+    /** Decimal string with 4 places, see Amount. */
+    private string $reservedBalance;
 
     public function __construct(
         private ?int $id,
         private readonly int $userId,
         private readonly Currency $currency,
-        private float $balance,
+        string $balance,
         private bool $isBlocked,
         private ?DateTimeImmutable $lastActivityAt,
         private readonly DateTimeImmutable $createdAt,
-        private float $reservedBalance = 0.0,
+        string $reservedBalance = '0',
     ) {
+        $this->balance = Amount::normalize($balance);
+        $this->reservedBalance = Amount::normalize($reservedBalance);
     }
 
     public static function create(int $userId, Currency $currency): self
@@ -32,7 +38,7 @@ class Wallet
             id: null,
             userId: $userId,
             currency: $currency,
-            balance: 0.0,
+            balance: '0',
             isBlocked: false,
             lastActivityAt: null,
             createdAt: new DateTimeImmutable(),
@@ -54,33 +60,38 @@ class Wallet
         return $this->currency;
     }
 
-    public function getBalance(): float
+    public function getBalance(): string
     {
         return $this->balance;
     }
 
-    public function getReservedBalance(): float
+    public function getReservedBalance(): string
     {
         return $this->reservedBalance;
     }
 
-    public function reserve(float $amount): void
+    /** What the client can still spend: the balance minus funds held by pending transfers. */
+    public function getAvailableBalance(): string
     {
-        $amount = $this->toLedgerAmount($amount);
-
-        $this->reservedBalance = round($this->reservedBalance + $amount, self::LEDGER_PRECISION);
+        return bcsub($this->balance, $this->reservedBalance, Amount::SCALE);
     }
 
-    public function release(float $amount): void
+    public function reserve(string $amount): void
     {
-        $amount = $this->toLedgerAmount($amount);
-        $reserved = round($this->reservedBalance, self::LEDGER_PRECISION);
+        $amount = $this->positiveAmount($amount);
 
-        if ($amount > $reserved) {
-            throw new LogicException(sprintf('Cannot release %s from wallet %s: only %s is reserved.', $amount, $this->id ?? 'new', $reserved));
+        $this->reservedBalance = bcadd($this->reservedBalance, $amount, Amount::SCALE);
+    }
+
+    public function release(string $amount): void
+    {
+        $amount = $this->positiveAmount($amount);
+
+        if (bccomp($amount, $this->reservedBalance, Amount::SCALE) > 0) {
+            throw new LogicException(sprintf('Cannot release %s from wallet %s: only %s is reserved.', $amount, $this->id ?? 'new', $this->reservedBalance));
         }
 
-        $this->reservedBalance = round($reserved - $amount, self::LEDGER_PRECISION);
+        $this->reservedBalance = bcsub($this->reservedBalance, $amount, Amount::SCALE);
     }
 
     public function isBlocked(): bool
@@ -98,8 +109,14 @@ class Wallet
         return $this->createdAt;
     }
 
-    public function setBalance(float $balance): void
+    public function setBalance(string $balance): void
     {
+        $balance = Amount::normalize($balance);
+
+        if (bccomp($balance, '0', Amount::SCALE) < 0) {
+            throw new InvalidArgumentException(sprintf('Balance of wallet %s cannot be negative, got %s.', $this->id ?? 'new', $balance));
+        }
+
         $this->balance = $balance;
     }
 
@@ -113,14 +130,14 @@ class Wallet
         $this->lastActivityAt = $lastActivityAt;
     }
 
-    private function toLedgerAmount(float $amount): float
+    private function positiveAmount(string $amount): string
     {
-        $rounded = round($amount, self::LEDGER_PRECISION);
+        $amount = Amount::normalize($amount);
 
-        if ($rounded <= 0.0) {
+        if (bccomp($amount, '0', Amount::SCALE) <= 0) {
             throw new InvalidArgumentException(sprintf('Reservation amount must be positive, got %s.', $amount));
         }
 
-        return $rounded;
+        return $amount;
     }
 }

@@ -40,6 +40,19 @@ class ExchangeRateServiceTest extends TestCase
         self::assertSame($expectedResult, $result);
     }
 
+    public function testConvertMultipliesBeforeDividingSoNoPrecisionIsLost(): void
+    {
+        self::assertSame('4.238900000000', $this->exchangeRateService->convert('1', Currency::EUR, Currency::PLN));
+        self::assertSame('23.591025973719', $this->exchangeRateService->convert('100', Currency::PLN, Currency::EUR));
+        // 1e11 HUF: a rate cut to 12 decimals first would be off by about 0.09 GBP here.
+        self::assertSame('241753738.987912071296',$this->exchangeRateService->convert('99999999999.9999', Currency::HUF, Currency::GBP));
+    }
+
+    public function testValueInEurIsExactForEur(): void
+    {
+        self::assertSame('15000.000000000000', $this->exchangeRateService->getValueInEur('15000', Currency::EUR));
+    }
+
     public static function exchangeRateDataProvider(): Generator
     {
         yield 'PLN' => ['currency' => Currency::PLN, 'expectedResult' => 1.0];

@@ -5,17 +5,22 @@ declare(strict_types=1);
 namespace App\Entity;
 
 use App\Enum\Currency;
+use App\Money\Amount;
 use DateTimeImmutable;
 
 class CompanyWallet
 {
+    /** Decimal string with 4 places, see Amount. */
+    private string $balance;
+
     public function __construct(
         private ?int $id,
         private readonly Currency $currency,
-        private float $balance,
+        string $balance,
         private readonly DateTimeImmutable $createdAt,
         private DateTimeImmutable $updatedAt,
     ) {
+        $this->balance = Amount::normalize($balance);
     }
 
     public static function create(Currency $currency): self
@@ -25,7 +30,7 @@ class CompanyWallet
         return new self(
             id: null,
             currency: $currency,
-            balance: 0.0,
+            balance: '0',
             createdAt: $now,
             updatedAt: $now,
         );
@@ -41,7 +46,7 @@ class CompanyWallet
         return $this->currency;
     }
 
-    public function getBalance(): float
+    public function getBalance(): string
     {
         return $this->balance;
     }
@@ -56,8 +61,8 @@ class CompanyWallet
         return $this->updatedAt;
     }
 
-    public function setBalance(float $balance): void
+    public function setBalance(string $balance): void
     {
-        $this->balance = $balance;
+        $this->balance = Amount::normalize($balance);
     }
 }

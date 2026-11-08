@@ -9,6 +9,7 @@ use App\Entity\Wallet;
 use App\Enum\Currency;
 use App\Enum\TransactionStatus;
 use App\Exception\InsufficientFundsException;
+use App\Exception\InvalidAmountException;
 use App\Exception\SameWalletTransferException;
 use App\Exception\WalletNotFoundException;
 use App\Repository\TransactionRepositoryInterface;
@@ -18,6 +19,7 @@ use App\Service\SpreadService;
 use App\Service\TransferService;
 use App\Tests\Support\ImmediateDatabaseTransaction;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 #[AllowMockObjectsWithoutExpectations]
@@ -49,9 +51,9 @@ class TransferServiceTest extends TestCase
     {
         $userId = 1;
         $fromWallet = Wallet::create($userId, Currency::PLN);
-        $fromWallet->setBalance(5000.0);
+        $fromWallet->setBalance('5000.0');
         $toWallet = Wallet::create($userId, Currency::EUR);
-        $toWallet->setBalance(100.0);
+        $toWallet->setBalance('100.0');
 
         $this->walletRepository
             ->expects(self::exactly(2))
@@ -67,10 +69,20 @@ class TransferServiceTest extends TestCase
             ->with(Currency::PLN, Currency::EUR)
             ->willReturn(0.25);
 
+        $this->exchangeRateService
+            ->expects(self::once())
+            ->method('convert')
+            ->with('1000.00', Currency::PLN, Currency::EUR)
+            ->willReturn('250.000000000000');
+
+        $this->exchangeRateService
+            ->method('getValueInEur')
+            ->willReturn('235.910259737195');
+
         $this->spreadService
             ->expects(self::once())
             ->method('calculateSpread')
-            ->with(250.0, Currency::PLN, Currency::EUR)
+            ->with('250.000000000000', Currency::PLN, Currency::EUR)
             ->willReturn('1.00');
 
         $this->walletRepository
@@ -85,9 +97,9 @@ class TransferServiceTest extends TestCase
 
         $transaction = $this->transferService->transfer($userId, 1, 2, '1000.00');
 
-        self::assertSame(5000.0, $fromWallet->getBalance());
-        self::assertSame(1000.0, $fromWallet->getReservedBalance());
-        self::assertSame(100.0, $toWallet->getBalance());
+        self::assertSame('5000.0000', $fromWallet->getBalance());
+        self::assertSame('1000.0000', $fromWallet->getReservedBalance());
+        self::assertSame('100.0000', $toWallet->getBalance());
         self::assertNotNull($fromWallet->getLastActivityAt());
         self::assertNotNull($toWallet->getLastActivityAt());
         self::assertSame(TransactionStatus::PENDING, $transaction->getStatus());
@@ -98,6 +110,28 @@ class TransferServiceTest extends TestCase
         self::assertSame('1.00', $transaction->getSpread());
         self::assertSame(Currency::PLN, $transaction->getFromCurrency());
         self::assertSame(Currency::EUR, $transaction->getToCurrency());
+    }
+
+    #[DataProvider('invalidTransferAmounts')]
+    public function testTransferRejectsInvalidAmountBeforeTouchingWallets(string $amount, string $message): void
+    {
+        $this->walletRepository->expects(self::never())->method('lockForUpdate');
+        $this->walletRepository->expects(self::never())->method('save');
+        $this->transactionRepository->expects(self::never())->method('save');
+
+        $this->expectException(InvalidAmountException::class);
+        $this->expectExceptionMessage($message);
+
+        $this->transferService->transfer(1, 1, 2, $amount);
+    }
+
+    public static function invalidTransferAmounts(): iterable
+    {
+        yield 'zero' => ['0', 'Amount must be a positive number.'];
+        yield 'negative' => ['-50', 'Amount must be a positive number.'];
+        yield 'scientific notation' => ['1e3', 'Amount must be a positive number.'];
+        yield 'more than 4 decimals' => ['0.00001', 'Amount must have at most 4 decimal places.'];
+        yield 'does not fit DECIMAL(15,4)' => ['100000000000', 'Amount is too large.'];
     }
 
     public function testTransferThrowsWhenFromWalletNotFound(): void
@@ -176,7 +210,7 @@ class TransferServiceTest extends TestCase
     public function testTransferThrowsWhenSourceAndTargetWalletAreTheSame(): void
     {
         $wallet = Wallet::create(1, Currency::PLN);
-        $wallet->setBalance(100.0);
+        $wallet->setBalance('100.0');
 
         $this->walletRepository
             ->method('findById')
@@ -192,13 +226,13 @@ class TransferServiceTest extends TestCase
             self::assertSame('Cannot transfer funds within the same wallet 1.', $e->getMessage());
         }
 
-        self::assertSame(100.0, $wallet->getBalance());
+        self::assertSame('100.0000', $wallet->getBalance());
     }
 
     public function testTransferThrowsWhenAmountExceedsBalance(): void
     {
         $fromWallet = Wallet::create(1, Currency::PLN);
-        $fromWallet->setBalance(100.0);
+        $fromWallet->setBalance('100.0');
         $toWallet = Wallet::create(1, Currency::EUR);
 
         $this->walletRepository
@@ -218,7 +252,7 @@ class TransferServiceTest extends TestCase
             self::assertSame('Insufficient funds in wallet 1.', $e->getMessage());
         }
 
-        self::assertSame(100.0, $fromWallet->getBalance());
-        self::assertSame(0.0, $toWallet->getBalance());
+        self::assertSame('100.0000', $fromWallet->getBalance());
+        self::assertSame('0.0000', $toWallet->getBalance());
     }
 }

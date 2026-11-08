@@ -131,14 +131,14 @@ class ProcessTransactionsCommandTest extends TestCase
             });
 
         // Enough for two healthy transactions processed in a single run.
-        $reservedWallet = $this->wallet(1, Currency::PLN, reserved: 200.0);
+        $reservedWallet = $this->wallet(1, Currency::PLN, reserved: '200.0');
         $wallets = $this->createStub(WalletRepositoryInterface::class);
         $wallets
             ->method('findById')
             ->willReturnMap([
                 [1, $reservedWallet],
-                [2, $this->wallet(2, Currency::EUR, reserved: 0.0)],
-                [3, $this->wallet(3, Currency::PLN, reserved: 0.0)],
+                [2, $this->wallet(2, Currency::EUR, reserved: '0.0')],
+                [3, $this->wallet(3, Currency::PLN, reserved: '0.0')],
             ]);
 
         return new CommandTester(new ProcessTransactionsCommand(
@@ -147,9 +147,9 @@ class ProcessTransactionsCommandTest extends TestCase
         ));
     }
 
-    private function wallet(int $id, Currency $currency, float $reserved): Wallet
+    private function wallet(int $id, Currency $currency, string $reserved): Wallet
     {
-        return new Wallet($id, 1, $currency, 500.0, false, null, new DateTimeImmutable(), $reserved);
+        return new Wallet($id, 1, $currency, '500.0', false, null, new DateTimeImmutable(), $reserved);
     }
 
     private function healthyTransaction(TransactionStatus $status): Transaction

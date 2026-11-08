@@ -22,7 +22,7 @@ class WalletTest extends TestCase
         $this->assertNull($wallet->getId());
         $this->assertSame(5, $wallet->getUserId());
         $this->assertSame(Currency::EUR, $wallet->getCurrency());
-        $this->assertSame(0.0, $wallet->getBalance());
+        $this->assertSame('0.0000', $wallet->getBalance());
         $this->assertFalse($wallet->isBlocked());
         $this->assertNull($wallet->getLastActivityAt());
     }
@@ -30,59 +30,59 @@ class WalletTest extends TestCase
     public function testSetBalance(): void
     {
         $wallet = Wallet::create(userId: 1, currency: Currency::PLN);
-        $wallet->setBalance(150.50);
+        $wallet->setBalance('150.50');
 
-        $this->assertSame(150.50, $wallet->getBalance());
+        $this->assertSame('150.5000', $wallet->getBalance());
     }
 
     public function testNewWalletHasNoReservedFunds(): void
     {
         $wallet = Wallet::create(userId: 1, currency: Currency::PLN);
 
-        $this->assertSame(0.0, $wallet->getReservedBalance());
+        $this->assertSame('0.0000', $wallet->getReservedBalance());
     }
 
     public function testReserveAndReleaseDoNotChangeBalance(): void
     {
         $wallet = Wallet::create(userId: 1, currency: Currency::PLN);
-        $wallet->setBalance(100.0);
+        $wallet->setBalance('100.0');
 
-        $wallet->reserve(40.0);
-        $this->assertSame(40.0, $wallet->getReservedBalance());
+        $wallet->reserve('40.0');
+        $this->assertSame('40.0000', $wallet->getReservedBalance());
 
-        $wallet->release(15.0);
-        $this->assertSame(25.0, $wallet->getReservedBalance());
-        $this->assertSame(100.0, $wallet->getBalance());
+        $wallet->release('15.0');
+        $this->assertSame('25.0000', $wallet->getReservedBalance());
+        $this->assertSame('100.0000', $wallet->getBalance());
     }
 
     public function testReleaseThrowsWhenAmountExceedsReservation(): void
     {
         $wallet = Wallet::create(userId: 1, currency: Currency::PLN);
-        $wallet->reserve(10.0);
+        $wallet->reserve('10.0');
 
         try {
-            $wallet->release(25.0);
+            $wallet->release('25.0');
             $this->fail('Expected LogicException.');
         } catch (LogicException) {
         }
 
-        $this->assertSame(10.0, $wallet->getReservedBalance());
+        $this->assertSame('10.0000', $wallet->getReservedBalance());
     }
 
     public function testReleaseToleratesFloatNoiseInSumOfReservations(): void
     {
         $wallet = Wallet::create(userId: 1, currency: Currency::PLN);
-        $wallet->reserve(0.7);
-        $wallet->reserve(0.1);
+        $wallet->reserve('0.7');
+        $wallet->reserve('0.1');
 
-        $wallet->release(0.7);
-        $wallet->release(0.1);
+        $wallet->release('0.7');
+        $wallet->release('0.1');
 
-        $this->assertSame(0.0, $wallet->getReservedBalance());
+        $this->assertSame('0.0000', $wallet->getReservedBalance());
     }
 
     #[DataProvider('nonPositiveAmountProvider')]
-    public function testReserveRejectsNonPositiveAmount(float $amount): void
+    public function testReserveRejectsNonPositiveAmount(string $amount): void
     {
         $wallet = Wallet::create(userId: 1, currency: Currency::PLN);
 
@@ -92,10 +92,10 @@ class WalletTest extends TestCase
     }
 
     #[DataProvider('nonPositiveAmountProvider')]
-    public function testReleaseRejectsNonPositiveAmount(float $amount): void
+    public function testReleaseRejectsNonPositiveAmount(string $amount): void
     {
         $wallet = Wallet::create(userId: 1, currency: Currency::PLN);
-        $wallet->reserve(10.0);
+        $wallet->reserve('10.0');
 
         $this->expectException(InvalidArgumentException::class);
 
@@ -104,9 +104,54 @@ class WalletTest extends TestCase
 
     public static function nonPositiveAmountProvider(): Generator
     {
-        yield 'zero' => [0.0];
-        yield 'negative' => [-5.0];
-        yield 'rounds to zero at ledger precision' => [0.00001];
+        yield 'zero' => ['0.0'];
+        yield 'negative' => ['-5.0'];
+        yield 'rounds to zero at ledger precision' => ['0.00001'];
+    }
+
+    public function testBalanceFromDatabaseIsKeptExactly(): void
+    {
+        $wallet = new Wallet(1, 1, Currency::PLN, '0.3000', false, null, new DateTimeImmutable(), '0.1000');
+
+        $this->assertSame('0.3000', $wallet->getBalance());
+        $this->assertSame('0.1000', $wallet->getReservedBalance());
+        $this->assertSame('0.2000', $wallet->getAvailableBalance());
+    }
+
+    public function testAvailableBalanceIsExactForManySmallReservations(): void
+    {
+        $wallet = Wallet::create(userId: 1, currency: Currency::PLN);
+        $wallet->setBalance('1');
+
+        for ($i = 0; $i < 10; ++$i) {
+            $wallet->reserve('0.1');
+        }
+
+        $this->assertSame('1.0000', $wallet->getReservedBalance());
+        $this->assertSame('0.0000', $wallet->getAvailableBalance());
+    }
+
+    public function testSetBalanceRejectsNegativeBalance(): void
+    {
+        $wallet = Wallet::create(userId: 1, currency: Currency::PLN);
+        $wallet->setBalance('10');
+
+        try {
+            $wallet->setBalance('-0.0001');
+            $this->fail('Expected InvalidArgumentException.');
+        } catch (InvalidArgumentException) {
+        }
+
+        $this->assertSame('10.0000', $wallet->getBalance());
+    }
+
+    public function testSetBalanceNeverRoundsSilently(): void
+    {
+        $wallet = Wallet::create(userId: 1, currency: Currency::PLN);
+
+        $this->expectException(InvalidArgumentException::class);
+
+        $wallet->setBalance('0.00001');
     }
 
     public function testSetIsBlocked(): void
