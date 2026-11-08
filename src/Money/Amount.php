@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Money;
 
+use App\Enum\Currency;
 use App\Exception\InvalidAmountException;
 use InvalidArgumentException;
+use RoundingMode;
 
 /**
  * Money is kept as decimal strings and calculated with bcmath, never with float:
@@ -42,6 +44,32 @@ final class Amount
         if (bccomp($amount, '0', self::SCALE) <= 0) {
             throw new InvalidAmountException('Amount must be a positive number.');
         }
+    }
+
+    /**
+     * A client can only send or deposit whole units of the currency (cents, whole yen):
+     * a part of a cent cannot be paid out. Trailing zeros ("10.2500") are only a format.
+     *
+     * @throws InvalidAmountException
+     */
+    public static function assertFitsCurrency(string $amount, Currency $currency): void
+    {
+        if (0 === bccomp($amount, self::floorToCurrency($amount, $currency), self::SCALE)) {
+            return;
+        }
+
+        throw new InvalidAmountException(0 === $currency->decimals()
+            ? sprintf('Amount must be a whole number for %s.', $currency->value)
+            : sprintf('Amount must have at most %d decimal places for %s.', $currency->decimals(), $currency->value));
+    }
+
+    /**
+     * Rounds down to the smallest unit of the currency, written with 4 decimal places.
+     * Used for what the client receives, so any part of a cent stays with the company.
+     */
+    public static function floorToCurrency(string $amount, Currency $currency): string
+    {
+        return bcadd(bcround($amount, $currency->decimals(), RoundingMode::NegativeInfinity), '0', self::SCALE);
     }
 
     /**

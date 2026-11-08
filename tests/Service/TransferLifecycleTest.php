@@ -11,6 +11,7 @@ use App\Enum\TransactionStatus;
 use App\Exception\InsufficientFundsException;
 use App\Exception\InvalidAmountException;
 use App\Exception\InvalidTransactionStateException;
+use App\Exception\WalletNotFoundException;
 use App\Service\ExchangeRateService;
 use App\Service\SpreadService;
 use App\Service\TransactionProcessorService;
@@ -168,7 +169,7 @@ class TransferLifecycleTest extends TestCase
 
         self::assertSame('900.0000', $this->from()->getBalance());
         self::assertSame('0.0000', $this->from()->getReservedBalance());
-        self::assertSame('23.4337', $this->to()->getBalance());
+        self::assertSame('23.4300', $this->to()->getBalance());
     }
 
     public function testRejectReturnsFundsToSender(): void
@@ -211,7 +212,7 @@ class TransferLifecycleTest extends TestCase
         }
 
         self::assertSame('900.0000', $this->from()->getBalance());
-        self::assertSame('23.4337', $this->to()->getBalance());
+        self::assertSame('23.4300', $this->to()->getBalance());
     }
 
     public function testRejectingCompletedTransactionDoesNotChangeBalances(): void
@@ -256,8 +257,9 @@ class TransferLifecycleTest extends TestCase
 
     public function testWholeAvailableBalanceCanBeSpentToTheLastCent(): void
     {
-        $this->transfer('999.99');
-        $this->transfer('0.01');
+        // 0.05 PLN is the smallest transfer that still gives the client a whole euro cent.
+        $this->transfer('999.95');
+        $this->transfer('0.05');
 
         self::assertSame('1000.0000', $this->from()->getReservedBalance());
         self::assertSame('0.0000', $this->from()->getAvailableBalance());
@@ -269,9 +271,9 @@ class TransferLifecycleTest extends TestCase
 
     public function testTransferIsRefusedWhenConvertedAmountRoundsToZero(): void
     {
-        // 0.0001 PLN is about 0.00002 EUR: the client would pay and receive nothing.
+        // 0.01 PLN is about 0.0024 EUR: there is no whole cent to give the client.
         try {
-            $this->transfer('0.0001');
+            $this->transfer('0.01');
             self::fail('Expected InvalidAmountException.');
         } catch (InvalidAmountException $e) {
             self::assertSame('Amount is too small to exchange.', $e->getMessage());
@@ -288,6 +290,68 @@ class TransferLifecycleTest extends TestCase
 
         self::assertSame('999.7000', $this->from()->getBalance());
         self::assertSame('0.0000', $this->from()->getReservedBalance());
+    }
+
+    /**
+     * 100 PLN is 23.591025973719 EUR; the formula spread is 0.1573. The client gets whole
+     * cents (23.43), the company everything else, rounded up to its 4-decimal ledger.
+     */
+    public function testClientReceivesWholeCentsAndCompanyGetsTheRest(): void
+    {
+        $transaction = $this->transfer('100');
+
+        self::assertSame('23.4300', $transaction->getToAmount());
+        self::assertSame('0.1611', $transaction->getSpread());
+
+        $this->processor->complete($transaction);
+
+        self::assertSame('23.4300', $this->to()->getBalance());
+        self::assertSame([[Currency::EUR, '0.1611']], $this->companyWallets->booked);
+    }
+
+    /** 1 EUR is 185.104803493449 JPY; the formula spread is 1.0889. Yen has no subunit. */
+    public function testClientReceivesWholeYen(): void
+    {
+        $this->wallets->rows[3] = new Wallet(3, 1, Currency::EUR, '10.0', false, null, new DateTimeImmutable());
+        $this->wallets->rows[4] = new Wallet(4, 1, Currency::JPY, '0.0', false, null, new DateTimeImmutable());
+
+        $transaction = $this->transferService->transfer(1, 3, 4, '1');
+
+        self::assertSame('184.0000', $transaction->getToAmount());
+        self::assertSame('1.1049', $transaction->getSpread());
+    }
+
+    public function testTransferOfPartOfAGroszIsRefused(): void
+    {
+        try {
+            $this->transfer('10.005');
+            self::fail('Expected InvalidAmountException.');
+        } catch (InvalidAmountException $e) {
+            self::assertSame('Amount must have at most 2 decimal places for PLN.', $e->getMessage());
+        }
+
+        self::assertSame('0.0000', $this->from()->getReservedBalance());
+        self::assertSame([], $this->transactions->rows);
+    }
+
+    public function testTransferOfPartOfAYenIsRefused(): void
+    {
+        $this->wallets->rows[3] = new Wallet(3, 1, Currency::JPY, '1000.0', false, null, new DateTimeImmutable());
+
+        $this->expectException(InvalidAmountException::class);
+        $this->expectExceptionMessage('Amount must be a whole number for JPY.');
+
+        $this->transferService->transfer(1, 3, self::TO_WALLET_ID, '100.5');
+    }
+
+    /** The currency check must not reveal that someone else's wallet exists. */
+    public function testForeignWalletIsNotFoundEvenWithInvalidDecimals(): void
+    {
+        $this->wallets->rows[3] = new Wallet(3, 2, Currency::PLN, '1000.0', false, null, new DateTimeImmutable());
+
+        $this->expectException(WalletNotFoundException::class);
+
+        $this->transferService->transfer(1, 3, self::TO_WALLET_ID, '10.005');
     }
 
     private function transfer(string $amount): Transaction

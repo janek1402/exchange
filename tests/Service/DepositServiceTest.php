@@ -119,6 +119,41 @@ class DepositServiceTest extends TestCase
         yield 'just above the maximum' => ['10000.0001', 'Amount cannot exceed 10000.'];
     }
 
+    #[DataProvider('depositsSmallerThanTheCurrencyUnit')]
+    public function testDepositRejectsAmountSmallerThanTheCurrencyUnit(Currency $currency, string $amount, string $message): void
+    {
+        $wallet = Wallet::create(1, $currency);
+
+        $this->walletRepository->method('findById')->willReturn($wallet);
+        $this->walletRepository->expects(self::never())->method('save');
+
+        try {
+            $this->depositService->deposit(1, 1, $amount);
+            self::fail('Expected InvalidAmountException.');
+        } catch (InvalidAmountException $e) {
+            self::assertSame($message, $e->getMessage());
+        }
+
+        self::assertSame('0.0000', $wallet->getBalance());
+    }
+
+    public static function depositsSmallerThanTheCurrencyUnit(): iterable
+    {
+        yield 'part of a grosz' => [Currency::PLN, '10.005', 'Amount must have at most 2 decimal places for PLN.'];
+        yield 'part of a yen' => [Currency::JPY, '1.5', 'Amount must be a whole number for JPY.'];
+    }
+
+    public function testDepositAcceptsWholeYen(): void
+    {
+        $wallet = Wallet::create(1, Currency::JPY);
+
+        $this->walletRepository->method('findById')->willReturn($wallet);
+
+        $this->depositService->deposit(1, 1, '100');
+
+        self::assertSame('100.0000', $wallet->getBalance());
+    }
+
     public function testDepositThrowsWhenWalletNotFound(): void
     {
         $this->walletRepository

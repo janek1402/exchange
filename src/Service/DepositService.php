@@ -51,6 +51,9 @@ readonly class DepositService
                 throw new WalletBlockedException($walletId);
             }
 
+            // Only after the ownership check, so the error does not reveal a foreign wallet's currency.
+            Amount::assertFitsCurrency($amount, $wallet->getCurrency());
+
             $wallet->setBalance(bcadd($wallet->getBalance(), $amount, Amount::SCALE));
             $wallet->setLastActivityAt(new DateTimeImmutable());
             $this->walletRepository->save($wallet);

@@ -107,7 +107,7 @@ class TransferServiceTest extends TestCase
         self::assertSame('1000.00', $transaction->getFromAmount());
         self::assertSame('249.0000', $transaction->getToAmount());
         self::assertSame('0.250000', $transaction->getExchangeRate());
-        self::assertSame('1.00', $transaction->getSpread());
+        self::assertSame('1.0000', $transaction->getSpread());
         self::assertSame(Currency::PLN, $transaction->getFromCurrency());
         self::assertSame(Currency::EUR, $transaction->getToCurrency());
     }

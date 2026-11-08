@@ -63,6 +63,9 @@ readonly class TransferService
                 throw new WalletBlockedException($toWalletId);
             }
 
+            // Only after the ownership check, so the error does not reveal a foreign wallet's currency.
+            Amount::assertFitsCurrency($fromAmount, $fromWallet->getCurrency());
+
             if (bccomp($fromAmount, $fromWallet->getAvailableBalance(), Amount::SCALE) > 0) {
                 throw new InsufficientFundsException($fromWalletId);
             }
@@ -71,10 +74,14 @@ readonly class TransferService
             $toCurrency = $toWallet->getCurrency();
 
             $rawToAmount = $this->exchangeRateService->convert($fromAmount, $fromCurrency, $toCurrency);
-            $spread = $this->spreadService->calculateSpread($rawToAmount, $fromCurrency, $toCurrency);
-            $toAmount = bcround(bcsub($rawToAmount, $spread, 12), Amount::SCALE, RoundingMode::HalfAwayFromZero);
+            $formulaSpread = $this->spreadService->calculateSpread($rawToAmount, $fromCurrency, $toCurrency);
 
-            // The client would pay and receive nothing (or less than nothing once the spread is taken).
+            // The client gets whole units of the target currency (cents, whole yen). Everything
+            // else is the company's spread, so it is never below the formula and nothing is lost.
+            $toAmount = Amount::floorToCurrency(bcsub($rawToAmount, $formulaSpread, 12), $toCurrency);
+            $spread = bcround(bcsub($rawToAmount, $toAmount, 12), Amount::SCALE, RoundingMode::PositiveInfinity);
+
+            // Not even one cent (or yen) is left for the client once the spread is taken.
             if (bccomp($toAmount, '0', Amount::SCALE) <= 0) {
                 throw new InvalidAmountException('Amount is too small to exchange.');
             }
