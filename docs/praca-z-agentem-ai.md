@@ -10,6 +10,7 @@ rozwijać, ale ostatnie słowo masz zawsze Ty. Ta strona mówi, jak zlecać zmia
 | `AGENTS.md` | Reguły dla agenta: pieniądze, spread, antyfraud, baza, testy. To wskazówki – agent może ich nie posłuchać. | większości narzędzi AI |
 | `.claude/settings.json` | Utrudnia (nie blokuje całkowicie) groźne polecenia: edycję `.env` i starych migracji, `rm -rf`, `git push --force`. | tylko Claude Code |
 | Hook testów | Zatrzymuje agenta, gdy testy są czerwone; jeśli nie naprawi ich po wezwaniu, ostrzega Cię "Nie akceptuj tej zmiany". | tylko Claude Code |
+| Recenzent pieniędzy | Drugi agent sprawdza zmianę według [listy](przeglad-zmian-w-pieniadzach.md) i daje werdykt OK / UWAGI / STOP. To też tylko wskazówka – może się pomylić. | Claude Code: sam; inne AI: na Twoją prośbę (niżej) |
 | CI na GitHubie | Przy każdym pull requeście: testy, migracje na czystej bazie, zakaz zmiany starych migracji. | zawsze |
 | Ochrona gałęzi `main` | Zmiana wchodzi tylko przez pull request z zielonym CI. | zawsze |
 | **Ty** | Czytasz podsumowanie agenta i decydujesz o scaleniu. | zawsze |
@@ -76,10 +77,25 @@ Czerwonego pull requesta **nigdy nie scalaj**. GitHub i tak na to nie pozwoli.
 - agent mówi "naprawione", ale nie pokazał wyniku testów;
 - agent zmieniał dane w bazie poleceniem SQL (`UPDATE`, `INSERT`, `DELETE`) zamiast przez aplikację
   lub migrację;
-- Claude Code pokazał komunikat **"Nie akceptuj tej zmiany"** (testy czerwone mimo wezwania).
+- Claude Code pokazał komunikat **"Nie akceptuj tej zmiany"** (testy czerwone mimo wezwania);
+- recenzent pieniędzy dał **STOP**, a Ty nie zgodziłeś się wcześniej na tę zmianę.
 
 W razie wątpliwości: nie scalaj, zapytaj agenta "wyjaśnij tę zmianę prostym językiem, co może pójść
 źle z pieniędzmi klientów?" albo poproś programistę o przegląd.
+
+## Przegląd zmian w pieniądzach
+
+Claude Code woła recenzenta sam po zmianie w pieniądzach. Jeśli nie widzisz jego werdyktu, napisz:
+"sprawdź zmianę recenzentem pieniędzy".
+
+Przy innym AI (Cursor, Copilot, ChatGPT…) zrób to sam, zanim utworzysz pull request. Otwórz **nowy czat**
+(recenzent nie powinien znać tłumaczeń autora zmiany) i wklej:
+
+```
+Przejrzyj zmiany na tej gałęzi według docs/przeglad-zmian-w-pieniadzach.md. Niczego nie zmieniaj.
+```
+
+Przy **STOP** nie scalaj. Wklej werdykt agentowi, który robił zmianę, i poproś o wyjaśnienie prostym językiem.
 
 ## Dostęp i hasła
 
