@@ -11,10 +11,13 @@ Właściciel nie jest programistą: tłumacz zmiany prostym językiem i zawsze o
 ## Zasady pracy
 - Jedna zmiana naraz. Po każdej zmianie uruchom testy i pokaż wynik.
 - Zmianę w logice pieniędzy (przelewy, spread, antyfraud, saldo) zaczynaj od testu, który pokazuje problem.
+  Po takiej zmianie wykonaj przegląd według `docs/przeglad-zmian-w-pieniadzach.md`
+  (w Claude Code: subagent `money-reviewer`) i pokaż werdykt.
 - Nigdy nie zmieniaj oczekiwań w istniejących testach tylko po to, żeby przeszły.
   Jeśli uważasz, że test jest błędny, zatrzymaj się i wyjaśnij dlaczego.
 - Nie usuwaj i nie pomijaj testów.
 - Nie edytuj plików `.env*` ani istniejących migracji.
+- Nie zmieniaj `.github/`, `.claude/` ani `AGENTS.md` bez wyraźnej prośby.
 - Nie ruszaj niezacommitowanych zmian, których nie zrobiłeś. Zapytaj o nie.
 - Nie rób commitów ani `git push` bez wyraźnej prośby.
 
