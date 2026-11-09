@@ -17,6 +17,10 @@ git diff main...HEAD       # zacommitowane na tej gałęzi
 git diff --cached          # dodane, niezacommitowane
 git diff                   # niedodane
 ```
+Jeśli jesteś na `main` albo `git diff main...HEAD` jest pusty, a właściciel wskazał commit
+(np. już scalony), użyj `git show <commit>`. Gdy nie wiesz, co sprawdzić, zapytaj o commit
+lub gałąź; nie oceniaj pustego diffu jako "OK".
+
 Przy zmienionej funkcji przeczytaj cały plik, nie tylko linie z diffu.
 
 ## Lista kontrolna
