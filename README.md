@@ -49,6 +49,8 @@ The owner's guide (in Polish) – how to ask for changes, what a red CI means an
 change: [docs/praca-z-agentem-ai.md](docs/praca-z-agentem-ai.md). Rules for the agent itself: [AGENTS.md](AGENTS.md).
 Checklist for reviewing changes that touch money (any AI tool; Claude Code uses it via the
 `money-reviewer` subagent): [docs/przeglad-zmian-w-pieniadzach.md](docs/przeglad-zmian-w-pieniadzach.md).
+What was prepared for working with AI and why, what was deliberately left out, and how it was verified
+(in Polish): [AI-DECISIONS.md](AI-DECISIONS.md).
 
 ---
 
