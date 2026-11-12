@@ -27,6 +27,12 @@ Właściciel nie jest programistą: tłumacz zmiany prostym językiem i zawsze o
 - Migracje uruchamia człowiek: `docker exec -it php-fpm php bin/console doctrine:migrations:migrate`.
 - Testy jednostkowe nie dotykają bazy. Zielone testy nie gwarantują, że migracje i zapis do bazy działają.
 
+## API
+- Każdy endpoint czytający treść żądania używa `WalletController::decodeJsonObject()`: zły JSON = 400,
+  nigdy 500. Nie wywołuj `json_decode()` na treści żądania samodzielnie.
+- Błędy API zawsze jako `{"error": "..."}`. Własne błędy zwraca kontroler, błędy 4xx zgłaszane przez
+  Symfony zamienia `ApiErrorListener`. Błędy 500 celowo zostają Symfony (nie ukrywaj awarii).
+
 ## Reguły biznesowe
 
 ### Przelewy (model rezerwacji)
