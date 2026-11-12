@@ -54,6 +54,8 @@ fi
     echo "Nie kończ pracy. Napraw przyczynę w kodzie zgodnie z AGENTS.md: nie zmieniaj oczekiwań"
     echo "w istniejących testach, nie usuwaj i nie pomijaj testów. Jeśli uważasz, że test jest błędny,"
     echo "zatrzymaj się i wyjaśnij to właścicielowi zamiast go zmieniać."
+    echo "Jeśli testy psują zmiany, których nie zrobiłeś (np. niezacommitowana praca właściciela),"
+    echo "nie ruszaj ich: powiedz, który test pada i dlaczego, i zapytaj właściciela, co zrobić."
     echo
     echo "Ostatnie linie wyniku testów:"
     # Bez kolorów ANSI, ostatnie 60 linii wystarczy, żeby zobaczyć porażki i podsumowanie.
