@@ -41,7 +41,7 @@ narzuciłem sam, poprawiając pierwszy plan agenta, który zaczynał od hooków.
     doprecyzowana, że chodzi o kwotę **otrzymaną** po wymianie, z wyjaśnieniem, dlaczego kierunek
     zaokrągleń jest ważny (decyduje, kto dostaje ułamek grosza).
 - Liczby, które decydują o pieniądzach (próg 15 000 EUR, `>` zamiast `>=`, liczba miejsc po
-  przecinku, kierunek zaokrągleń, próg resztki 0,01 EUR), mają dopisek "nie zmieniaj bez zgody
+  przecinku, kierunek zaokrągleń, reguła resztki przy usuwaniu portfela), mają dopisek "nie zmieniaj bez zgody
   właściciela" przy samej regule, a nie w jednym zbiorczym zdaniu – agent widzi go tam, gdzie czyta regułę.
 
 ### 3. CI – trzy sprawdzenia przy każdym PR i pushu na `main`
@@ -137,7 +137,8 @@ pobraniu kodu". Agent i właściciel mają jeden wspólny opis tego, jak aplikac
 - Stare przelewy sprzed modelu rezerwacji (bez zablokowanej kwoty): aplikacja nie była jeszcze
   udostępniona klientom, więc nie ma automatycznej migracji danych. Komenda przetwarzania zgłasza błąd
   takiego przelewu i przechodzi do następnego; zostaje do ręcznej decyzji.
-- Odpis resztki (< 0,01 EUR) przy usuwaniu portfela nie ma własnego wpisu w historii transakcji – widać
+- Odpis resztki, której nie da się przelać (część grosza, HUF poniżej ok. 0,87), przy usuwaniu portfela
+  po potwierdzeniu klienta nie ma własnego wpisu w historii transakcji – widać
   go tylko w saldzie portfela firmy.
 - Przekroczenie czasu oczekiwania na blokadę portfela w bazie kończy się błędem 500 z pełnym wycofaniem,
   bez automatycznego ponowienia. Pieniądze są bezpieczne, ale klient musi spróbować jeszcze raz.
