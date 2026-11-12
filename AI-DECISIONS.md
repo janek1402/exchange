@@ -58,6 +58,9 @@ narzuciłem sam, poprawiając pierwszy plan agenta, który zaczynał od hooków.
 - Ruleset na `main`: zmiana tylko przez pull request, wymagane wszystkie 3 sprawdzenia CI, pusta lista
   wyjątków (administrator też nie ominie), bez force push i bez usuwania gałęzi. Dopiero razem z tym
   czerwone CI naprawdę blokuje scalenie.
+- Ustawienie jest na GitHubie, nie w kodzie, więc jego eksport i polecenia do samodzielnego sprawdzenia
+  są w `docs/ochrona-galezi-main.md` i `docs/github-ruleset-main.json`. Tam też to, czego ochrona nie robi:
+  nie wymaga akceptacji drugiej osoby ani PR-a aktualnego względem `main`.
 - Token GitHuba dla agenta bez uprawnienia `workflow`: GitHub odrzuca wtedy push zmieniający
   `.github/workflows/`, więc agent nie wyłączy ani nie osłabi CI. Odkryłem to przypadkiem przy
   pierwszym pushu CI, gdy mój własny token został odrzucony.
@@ -245,6 +248,8 @@ Podsumowanie: **A – 3 ✅, 1 ⚠️, 1 ❌; B – 5 ✅.**
 - **Ochrona gałęzi `main`**: bezpośredni push pustego commita na `main` odrzucony przez GitHub
   (GH013: wymagany PR i 3 sprawdzenia CI). PR z tej gałęzi uruchomił CI i został zamknięty bez scalania.
   Kolejne zmiany (instrukcja dla właściciela, recenzent, przegląd `AGENTS.md`) weszły już tylko przez PR.
+  Ustawienia pobrane z publicznego API GitHuba: `docs/github-ruleset-main.json` (każdy może to powtórzyć
+  poleceniami z `docs/ochrona-galezi-main.md`).
 - **Recenzent pieniędzy** jako "inne AI" (zwykły agent, tylko polecenie z instrukcji dla właściciela),
   na 3 osobnych kopiach repo z commitami o mylących opisach:
   - zaokrąglenie kwoty klienta "do najbliższego" zamiast w dół ("fix: round received amount
