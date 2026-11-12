@@ -147,7 +147,7 @@ Errors come as `{ "error": "message" }`.
 
 | Code  | When                                                                                                                                                                                          |
 |-------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `400` | Invalid input: missing field, invalid currency, wallet ID that is not a positive integer, invalid amount (e.g. `Amount must have at most 2 decimal places for PLN.`, `Amount must be a whole number for JPY.`, `Amount cannot exceed 10000.`, `Amount is too small to exchange.`). |
+| `400` | Invalid input: missing field, invalid currency, wallet ID that is not a positive integer, invalid amount (e.g. `Amount must have at most 2 decimal places for PLN.`, `Amount must be a whole number for JPY.`, `Amount cannot exceed 10000.`, `Amount is too small to exchange.`), or a `?confirm=` value that is not true/false. |
 | `401` | Missing or invalid token.                                                                                                                                                                     |
 | `404` | Wallet not found. **Also for someone else's wallet** (so its existence is not revealed) and for a deleted wallet.                                                                            |
 | `409` | Wallet already exists (create), or the wallet cannot be deleted (see below).                                                                                                                 |
@@ -160,11 +160,17 @@ history points to it. Deletion is refused with `409` while:
 
 - money is on hold for transfers in progress (`Wallet 1 has funds reserved by transfers in progress.`),
 - any transfer from or to the wallet is still `pending` or `fraud_review` (`Wallet 1 has transfers in progress.`),
-- the balance is worth **0.01 EUR or more** (`Wallet 1 still holds 12.3400 PLN. Spend or transfer it first.`).
+- the balance can still be transferred, however small: at least one whole cent (yen) of it gives the client
+  at least one cent (yen) in some other currency after the spread, e.g. `0.04 PLN` → `3.35 HUF`
+  (`You still have 0.04 PLN that you can transfer. Transfer it before deleting the wallet.`).
+  This cannot be overridden.
 
-A remainder worth **less than 0.01 EUR** can never be spent (it is less than a cent after any exchange), so it
-goes to the company wallet when the wallet is deleted. A blocked wallet cannot be deleted (`422`). After deletion
-the user can open a new wallet in the same currency; it gets a new ID.
+Only a remainder that **cannot be transferred anywhere** (a part of a cent, or less than about `0.87 HUF`)
+can be given up. The first request is refused with `409`
+(`Deleting this wallet will lose the remaining 0.5000 HUF. Send the request again with ?confirm=true to delete it.`);
+`DELETE /api/wallets/{id}?confirm=true` deletes the wallet and the remainder goes to the company wallet.
+A blocked wallet cannot be deleted (`422`). After deletion the user can open a new wallet in the same currency;
+it gets a new ID.
 
 A ready-to-use Postman collection is available at [`exchange-api.postman_collection.json`](./exchange-api.postman_collection.json).
 Set the `authToken` variable to the token returned by `app:create-user`.

@@ -15,6 +15,7 @@ use App\Exception\WalletAlreadyExistsException;
 use App\Exception\WalletBlockedException;
 use App\Exception\WalletNotEmptyException;
 use App\Exception\WalletNotFoundException;
+use App\Exception\WalletRemainderNotConfirmedException;
 use App\Money\Amount;
 use App\Repository\WalletRepositoryInterface;
 use App\Service\DepositService;
@@ -26,6 +27,7 @@ use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\Attribute\MapQueryParameter;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\CurrentUser;
 use ValueError;
@@ -155,17 +157,18 @@ final class WalletController extends AbstractController
 
     /**
      * Someone else's wallet gets 404, not 403, so its existence is not revealed.
+     * ?confirm=true is the client's consent to lose a remainder that cannot be transferred.
      */
     #[Route('/{id}', requirements: ['id' => '\d+'], methods: ['DELETE'])]
-    public function delete(int $id, #[CurrentUser] User $user): Response
+    public function delete(int $id, #[CurrentUser] User $user, #[MapQueryParameter(validationFailedStatusCode: Response::HTTP_BAD_REQUEST)] bool $confirm = false): Response
     {
         try {
-            $this->walletDeletionService->deleteWallet($user->getIdNotNull(), $id);
+            $this->walletDeletionService->deleteWallet($user->getIdNotNull(), $id, $confirm);
         } catch (WalletNotFoundException $e) {
             return new JsonResponse(['error' => $e->getMessage()], Response::HTTP_NOT_FOUND);
         } catch (WalletBlockedException $e) {
             return new JsonResponse(['error' => $e->getMessage()], Response::HTTP_UNPROCESSABLE_ENTITY);
-        } catch (WalletNotEmptyException $e) {
+        } catch (WalletNotEmptyException|WalletRemainderNotConfirmedException $e) {
             return new JsonResponse(['error' => $e->getMessage()], Response::HTTP_CONFLICT);
         }
 

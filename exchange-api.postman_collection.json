@@ -109,7 +109,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "wallets", "1"]
             },
-            "description": "Deletes the authenticated user's own wallet. Returns 204 on success, 404 for a missing or someone else's wallet, 409 if money or transfers in progress remain, 422 if the wallet is blocked."
+            "description": "Deletes the authenticated user's own wallet. Returns 204 on success, 404 for a missing or someone else's wallet, 409 if money that can still be transferred or transfers in progress remain, 422 if the wallet is blocked. A remainder that cannot be transferred anywhere is given up only with ?confirm=true (the first request returns 409 with a warning)."
           },
           "response": []
         }

@@ -15,7 +15,6 @@ use App\Repository\DatabaseTransactionInterface;
 use App\Repository\TransactionRepositoryInterface;
 use App\Repository\WalletRepositoryInterface;
 use DateTimeImmutable;
-use RoundingMode;
 
 readonly class TransferService
 {
@@ -73,13 +72,10 @@ readonly class TransferService
             $fromCurrency = $fromWallet->getCurrency();
             $toCurrency = $toWallet->getCurrency();
 
-            $rawToAmount = $this->exchangeRateService->convert($fromAmount, $fromCurrency, $toCurrency);
-            $formulaSpread = $this->spreadService->calculateSpread($rawToAmount, $fromCurrency, $toCurrency);
-
-            // The client gets whole units of the target currency (cents, whole yen). Everything
-            // else is the company's spread, so it is never below the formula and nothing is lost.
-            $toAmount = Amount::floorToCurrency(bcsub($rawToAmount, $formulaSpread, 12), $toCurrency);
-            $spread = bcround(bcsub($rawToAmount, $toAmount, 12), Amount::SCALE, RoundingMode::PositiveInfinity);
+            $quote = new ExchangeQuoteService($this->exchangeRateService, $this->spreadService)
+                ->quote($fromAmount, $fromCurrency, $toCurrency);
+            $toAmount = $quote->toAmount;
+            $spread = $quote->spread;
 
             // Not even one cent (or yen) is left for the client once the spread is taken.
             if (bccomp($toAmount, '0', Amount::SCALE) <= 0) {
