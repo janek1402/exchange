@@ -19,11 +19,11 @@ class TransactionTest extends TestCase
         $this->assertNull($transaction->getId());
         $this->assertSame(1, $transaction->getFromWalletId());
         $this->assertSame(2, $transaction->getToWalletId());
-        $this->assertSame('100.00', $transaction->getFromAmount());
-        $this->assertSame('90.00', $transaction->getToAmount());
+        $this->assertSame('100.0000', $transaction->getFromAmount());
+        $this->assertSame('90.0000', $transaction->getToAmount());
         $this->assertSame(Currency::PLN, $transaction->getFromCurrency());
         $this->assertSame(Currency::EUR, $transaction->getToCurrency());
-        $this->assertSame('0.02', $transaction->getSpread());
+        $this->assertSame('0.0200', $transaction->getSpread());
         $this->assertSame('0.22', $transaction->getExchangeRate());
         $this->assertSame(TransactionStatus::PENDING, $transaction->getStatus());
         $this->assertFalse($transaction->requiresAntiFraudCheck());
