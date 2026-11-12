@@ -54,7 +54,8 @@ Właściciel nie jest programistą: tłumacz zmiany prostym językiem i zawsze o
 ### Spread i zarobek kantoru
 - Kantor zarabia na spreadzie przy każdym przewalutowaniu. Wzór jest w README.md; nie zmieniaj go bez zgody właściciela.
 - Kwoty klienta (przelew, wpłata, kwota otrzymana) tylko w pełnych jednostkach waluty:
-  2 miejsca po przecinku, JPY 0 (`Currency::decimals()`). Część grosza = 400.
+  2 miejsca po przecinku, JPY 0 (`Currency::decimals()`). Przelew lub wpłata z ułamkiem grosza
+  (np. 10.005 PLN, 1.5 JPY) jest odrzucana z kodem 400 (`Amount::assertFitsCurrency()`), nigdy zaokrąglana.
 - Klient dostaje kwotę po przeliczeniu i odjęciu spreadu ze wzoru, zaokrągloną W DÓŁ do pełnych groszy.
   Cała reszta to spread kantoru, zaokrąglony W GÓRĘ do 4 miejsc. Kantor nigdy nie dostaje mniej niż wzór.
 - Przelew, w którym klient po przeliczeniu i odjęciu spreadu dostałby mniej niż 1 grosz (jen)
