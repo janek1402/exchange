@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Service;
 
+use App\Dto\TransactionResponse;
 use App\Entity\Transaction;
 use App\Entity\Wallet;
 use App\Enum\Currency;
@@ -352,6 +353,23 @@ class TransferLifecycleTest extends TestCase
         $this->expectException(WalletNotFoundException::class);
 
         $this->transferService->transfer(1, 3, self::TO_WALLET_ID, '10.005');
+    }
+
+    /**
+     * "0100.5", "100.50" and "100.5" are the same money. The transfer's response must show it the
+     * way the database stores it and the wallet shows it, not the client's text: otherwise the
+     * same transfer reads "0100.5" right after sending and "100.5000" when it is read back.
+     */
+    public function testSentAmountIsStoredAndShownWithFourDecimals(): void
+    {
+        foreach (['0100.5', '100.50', '100.5'] as $amount) {
+            $transaction = $this->transfer($amount);
+
+            self::assertSame('100.5000', $transaction->getFromAmount(), $amount);
+            self::assertSame('100.5000', new TransactionResponse($transaction)->jsonSerialize()['fromAmount'], $amount);
+        }
+
+        self::assertSame('301.5000', $this->from()->getReservedBalance());
     }
 
     private function transfer(string $amount): Transaction

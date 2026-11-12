@@ -6,25 +6,37 @@ namespace App\Entity;
 
 use App\Enum\Currency;
 use App\Enum\TransactionStatus;
+use App\Money\Amount;
 use DateTimeImmutable;
 
 class Transaction
 {
+    private readonly string $fromAmount;
+    private readonly string $toAmount;
+    private readonly string $spread;
+
+    /**
+     * Amounts are kept with exactly 4 decimal places, as in the database and in Wallet, so a
+     * transfer of "0100.5" reads "100.5000" everywhere. More decimals are refused, never rounded.
+     */
     public function __construct(
         private ?int $id,
         private readonly int $fromWalletId,
         private readonly int $toWalletId,
-        private readonly string $fromAmount,
-        private readonly string $toAmount,
+        string $fromAmount,
+        string $toAmount,
         private readonly Currency $fromCurrency,
         private readonly Currency $toCurrency,
-        private readonly string $spread,
+        string $spread,
         private readonly string $exchangeRate,
         private TransactionStatus $status,
         private readonly bool $requiresAntiFraudCheck,
         private ?DateTimeImmutable $antiFraudCheckedAt,
         private readonly DateTimeImmutable $createdAt,
     ) {
+        $this->fromAmount = Amount::normalize($fromAmount);
+        $this->toAmount = Amount::normalize($toAmount);
+        $this->spread = Amount::normalize($spread);
     }
 
     public static function create(
