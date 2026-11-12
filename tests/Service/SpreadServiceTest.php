@@ -34,8 +34,10 @@ class SpreadServiceTest extends TestCase
     }
 
     /**
-     * Spread is rounded up to 4 decimals, in the company's favour (owner's decision, step 7).
-     * Amounts and the spread column have 4 decimals, so even tiny exchanges can be made.
+     * Spread is rounded up to 4 decimals, in the company's favour, so it is never below the formula
+     * (owner's decision). Not 2 decimals: rounding up to whole cents would make every spread at least
+     * 0.01 of the target currency and refuse tiny exchanges such as 0.01 PLN → EUR. Amounts and the
+     * spread column have 4 decimals, so even tiny exchanges can be made.
      */
     public static function calculateSpreadDataProvider(): Generator
     {
