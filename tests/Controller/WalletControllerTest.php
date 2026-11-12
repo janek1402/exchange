@@ -17,6 +17,7 @@ use App\Exception\WalletAlreadyExistsException;
 use App\Exception\WalletBlockedException;
 use App\Exception\WalletNotEmptyException;
 use App\Exception\WalletNotFoundException;
+use App\Exception\WalletRemainderNotConfirmedException;
 use App\Repository\WalletRepositoryInterface;
 use App\Service\DepositService;
 use App\Service\TransferService;
@@ -27,6 +28,11 @@ use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpKernel\Controller\ArgumentResolver\QueryParameterValueResolver;
+use Symfony\Component\HttpKernel\ControllerMetadata\ArgumentMetadata;
+use Symfony\Component\HttpKernel\ControllerMetadata\ArgumentMetadataFactory;
+use Symfony\Component\HttpKernel\Exception\HttpException;
+use ReflectionMethod;
 use Throwable;
 
 #[AllowMockObjectsWithoutExpectations]
@@ -609,6 +615,82 @@ class WalletControllerTest extends TestCase
     }
 
     /**
+     * Without ?confirm=true the client has not agreed to lose anything.
+     *
+     * @throws Throwable
+     */
+    #[DataProvider('confirmations')]
+    public function testDeletePassesTheClientsConfirmation(?bool $confirm, bool $expected): void
+    {
+        $user = new User(1, 'test@example.com', ['ROLE_USER'], new DateTimeImmutable());
+
+        $this->walletDeletionService
+            ->expects(self::once())
+            ->method('deleteWallet')
+            ->with(1, 5, $expected);
+
+        $response = null === $confirm
+            ? $this->controller->delete(5, $user)
+            : $this->controller->delete(5, $user, $confirm);
+
+        self::assertSame(204, $response->getStatusCode());
+    }
+
+    public static function confirmations(): iterable
+    {
+        yield 'no parameter' => [null, false];
+        yield 'confirmed' => [true, true];
+        yield 'explicitly not confirmed' => [false, false];
+    }
+
+    /**
+     * Symfony reads ?confirm= before the controller runs. A value that is not true/false
+     * (e.g. "tak") is a bad request, not a missing wallet: 404 would tell the client the wallet is gone.
+     */
+    #[DataProvider('confirmQueryValues')]
+    public function testConfirmQueryParameterIsReadAsTrueOrFalse(string $value, ?bool $expected): void
+    {
+        $arguments = new ArgumentMetadataFactory()->createArgumentMetadata([WalletController::class, 'delete'], new ReflectionMethod(WalletController::class, 'delete'));
+        $confirm = array_values(array_filter($arguments, static fn (ArgumentMetadata $argument): bool => 'confirm' === $argument->getName()))[0];
+
+        try {
+            $resolved = new QueryParameterValueResolver()->resolve(new Request(['confirm' => $value]), $confirm);
+        } catch (HttpException $e) {
+            self::assertNull($expected, sprintf('"%s" should have been accepted.', $value));
+            self::assertSame(400, $e->getStatusCode());
+
+            return;
+        }
+
+        self::assertNotNull($expected, sprintf('"%s" should have been refused.', $value));
+        self::assertSame([$expected], $resolved);
+    }
+
+    public static function confirmQueryValues(): iterable
+    {
+        yield 'true' => ['true', true];
+        yield '1' => ['1', true];
+        yield 'false' => ['false', false];
+        yield 'not a yes/no value' => ['tak', null];
+    }
+
+    /**
+     * @throws Throwable
+     */
+    public function testUnconfirmedRemainderIsAConflict(): void
+    {
+        $user = new User(1, 'test@example.com', ['ROLE_USER'], new DateTimeImmutable());
+        $message = 'Deleting this wallet will lose the remaining 0.5000 HUF. Send the request again with ?confirm=true to delete it.';
+
+        $this->walletDeletionService->method('deleteWallet')->willThrowException(new WalletRemainderNotConfirmedException($message));
+
+        $response = $this->controller->delete(5, $user);
+
+        self::assertSame(409, $response->getStatusCode());
+        self::assertSame($message, json_decode($response->getContent(), true, 512, JSON_THROW_ON_ERROR)['error']);
+    }
+
+    /**
      * Someone else's wallet gets 404, not 403, so its existence is not revealed.
      *
      * @throws Throwable
@@ -633,9 +715,9 @@ class WalletControllerTest extends TestCase
         yield 'missing or foreign' => [new WalletNotFoundException(5), 404, 'Wallet 5 not found.'];
         yield 'blocked' => [new WalletBlockedException(5), 422, 'Wallet 5 is blocked.'];
         yield 'money on it' => [
-            new WalletNotEmptyException('Wallet 5 still holds 12.3400 PLN. Spend or transfer it first.'),
+            new WalletNotEmptyException('You still have 12.34 PLN that you can transfer. Transfer it before deleting the wallet.'),
             409,
-            'Wallet 5 still holds 12.3400 PLN. Spend or transfer it first.',
+            'You still have 12.34 PLN that you can transfer. Transfer it before deleting the wallet.',
         ];
     }
 }

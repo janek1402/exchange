@@ -7,6 +7,7 @@ namespace App\Service;
 use App\Exception\WalletBlockedException;
 use App\Exception\WalletNotEmptyException;
 use App\Exception\WalletNotFoundException;
+use App\Exception\WalletRemainderNotConfirmedException;
 use App\Money\Amount;
 use App\Repository\CompanyWalletRepositoryInterface;
 use App\Repository\DatabaseTransactionInterface;
@@ -17,31 +18,30 @@ use DateTimeImmutable;
 /**
  * Deletes a client's own wallet (soft delete: the row stays for the transaction history).
  * The client's money must never disappear: funds on hold, transfers in progress and any
- * real balance stop the deletion. Only a remainder worth less than 0.01 EUR, which can never
- * be spent, goes to the company wallet (owner's decision).
+ * balance that can still be transferred stop the deletion. Only a remainder that cannot be
+ * transferred anywhere goes to the company wallet, and only after the client confirms
+ * (owner's decision). Do not change this without the owner's consent.
  */
 readonly class WalletDeletionService
 {
-    /** Strictly below one euro cent. Do not change without the owner's consent. */
-    private const string REMAINDER_LIMIT_EUR = '0.01';
-
     public function __construct(
         private WalletRepositoryInterface $walletRepository,
         private TransactionRepositoryInterface $transactionRepository,
         private CompanyWalletRepositoryInterface $companyWalletRepository,
-        private ExchangeRateService $exchangeRateService,
+        private ExchangeQuoteService $exchangeQuoteService,
         private DatabaseTransactionInterface $databaseTransaction,
     ) {
     }
 
     /**
-     * @throws WalletNotFoundException  missing, deleted or someone else's wallet (404, not 403)
+     * @throws WalletNotFoundException              missing, deleted or someone else's wallet (404, not 403)
      * @throws WalletBlockedException
-     * @throws WalletNotEmptyException
+     * @throws WalletNotEmptyException              funds on hold, transfers in progress or a transferable balance
+     * @throws WalletRemainderNotConfirmedException only an untransferable remainder is left and the client has not confirmed losing it
      */
-    public function deleteWallet(int $userId, int $walletId): void
+    public function deleteWallet(int $userId, int $walletId, bool $confirmRemainderLoss = false): void
     {
-        $this->databaseTransaction->run(function () use ($userId, $walletId): void {
+        $this->databaseTransaction->run(function () use ($userId, $walletId, $confirmRemainderLoss): void {
             // Locked first: a transfer to this wallet locks it too, so none can slip in during the checks.
             $this->walletRepository->lockForUpdate($walletId);
 
@@ -63,20 +63,28 @@ readonly class WalletDeletionService
             }
 
             $balance = $wallet->getBalance();
-            $valueInEur = $this->exchangeRateService->getValueInEur($balance, $wallet->getCurrency());
+            $currency = $wallet->getCurrency();
 
-            if (bccomp($valueInEur, self::REMAINDER_LIMIT_EUR, 12) >= 0) {
-                throw new WalletNotEmptyException(sprintf(
-                    'Wallet %d still holds %s %s. Spend or transfer it first.',
-                    $walletId,
-                    $balance,
-                    $wallet->getCurrency()->value,
-                ));
-            }
-
-            // A remainder that can never be spent goes to the company, so no money disappears.
             if (bccomp($balance, '0', Amount::SCALE) > 0) {
-                $this->companyWalletRepository->addToBalance($wallet->getCurrency(), $balance);
+                // Money the client can still transfer is never lost, however small.
+                if ($this->exchangeQuoteService->canBeTransferred($balance, $currency)) {
+                    throw new WalletNotEmptyException(sprintf(
+                        'You still have %s %s that you can transfer. Transfer it before deleting the wallet.',
+                        bcadd(Amount::floorToCurrency($balance, $currency), '0', $currency->decimals()),
+                        $currency->value,
+                    ));
+                }
+
+                if (!$confirmRemainderLoss) {
+                    throw new WalletRemainderNotConfirmedException(sprintf(
+                        'Deleting this wallet will lose the remaining %s %s. Send the request again with ?confirm=true to delete it.',
+                        $balance,
+                        $currency->value,
+                    ));
+                }
+
+                // The confirmed remainder goes to the company, so no money disappears.
+                $this->companyWalletRepository->addToBalance($currency, $balance);
                 $wallet->setBalance('0');
             }
 
