@@ -6,10 +6,12 @@ namespace App\Repository;
 
 use App\Entity\Wallet;
 use App\Enum\Currency;
+use App\Exception\WalletAlreadyExistsException;
 use DateTimeImmutable;
 use DateTimeZone;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use ReflectionClass;
 
 readonly class WalletRepository implements WalletRepositoryInterface
@@ -156,20 +158,26 @@ readonly class WalletRepository implements WalletRepositoryInterface
                 'created_at' => ':created_at',
             ]);
 
-        $this->connection->executeQuery(
-            $qb->getSQL(),
-            [
-                'user_id' => $wallet->getUserId(),
-                'currency' => $wallet->getCurrency()->value,
-                'balance' => $wallet->getBalance(),
-                'reserved_balance' => $wallet->getReservedBalance(),
-                'is_blocked' => (int) $wallet->isBlocked(),
-                'last_activity_at' => $wallet->getLastActivityAt()?->setTimezone(timezone: new DateTimeZone('UTC'))->format('Y-m-d H:i:s'),
-                'created_at' => $wallet->getCreatedAt()
-                    ->setTimezone(timezone: new DateTimeZone('UTC'))
-                    ->format('Y-m-d H:i:s'),
-            ]
-        );
+        try {
+            $this->connection->executeQuery(
+                $qb->getSQL(),
+                [
+                    'user_id' => $wallet->getUserId(),
+                    'currency' => $wallet->getCurrency()->value,
+                    'balance' => $wallet->getBalance(),
+                    'reserved_balance' => $wallet->getReservedBalance(),
+                    'is_blocked' => (int) $wallet->isBlocked(),
+                    'last_activity_at' => $wallet->getLastActivityAt()?->setTimezone(timezone: new DateTimeZone('UTC'))->format('Y-m-d H:i:s'),
+                    'created_at' => $wallet->getCreatedAt()
+                        ->setTimezone(timezone: new DateTimeZone('UTC'))
+                        ->format('Y-m-d H:i:s'),
+                ]
+            );
+        } catch (UniqueConstraintViolationException) {
+            // The only unique index on wallets: one active wallet per user and currency. Two requests
+            // at the same moment both pass WalletService's check; the database stops the second one.
+            throw new WalletAlreadyExistsException($wallet->getUserId(), $wallet->getCurrency());
+        }
 
         $id = (int) $this->connection->lastInsertId();
 

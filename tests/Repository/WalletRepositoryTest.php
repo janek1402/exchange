@@ -6,10 +6,14 @@ namespace App\Tests\Repository;
 
 use App\Entity\Wallet;
 use App\Enum\Currency;
+use App\Exception\WalletAlreadyExistsException;
 use App\Repository\WalletRepository;
 use DateTimeImmutable;
 use DateTimeZone;
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Driver\AbstractException;
+use Doctrine\DBAL\Exception\DriverException;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\DBAL\Platforms\MariaDBPlatform;
 use Doctrine\DBAL\Query\QueryBuilder;
 use PHPUnit\Framework\MockObject\MockObject;
@@ -131,6 +135,48 @@ class WalletRepositoryTest extends TestCase
         $wallet = new WalletRepository($connection)->findById(1);
 
         self::assertTrue($wallet->isDeleted());
+    }
+
+    /**
+     * Two "create EUR wallet" requests at the same moment both pass the "does it exist?" check;
+     * the database index stops the second one. That is a 409 for the client, not a 500.
+     */
+    public function testSecondActiveWalletInTheSameCurrencyIsReportedAsAlreadyExisting(): void
+    {
+        $connection = $this->connectionBuildingRealSql();
+        $connection->expects(self::once())->method('executeQuery')->willThrowException(
+            new UniqueConstraintViolationException($this->driverError('Duplicate entry for key wallet_user_currency_active_unique'), null),
+        );
+
+        $wallet = Wallet::create(2, Currency::EUR);
+
+        try {
+            new WalletRepository($connection)->save($wallet);
+            self::fail('Expected WalletAlreadyExistsException.');
+        } catch (WalletAlreadyExistsException $e) {
+            self::assertSame('Wallet for user 2 in currency EUR already exists.', $e->getMessage());
+        }
+
+        self::assertNull($wallet->getId(), 'The wallet was not saved, so it must not get an ID.');
+    }
+
+    /** Any other database error stays an error: hiding it as "already exists" would mislead. */
+    public function testOtherDatabaseErrorsAreNotHidden(): void
+    {
+        $error = new DriverException($this->driverError('Lost connection'), null);
+
+        $connection = $this->connectionBuildingRealSql();
+        $connection->expects(self::once())->method('executeQuery')->willThrowException($error);
+
+        $this->expectExceptionObject($error);
+
+        new WalletRepository($connection)->save(Wallet::create(2, Currency::EUR));
+    }
+
+    private function driverError(string $message): AbstractException
+    {
+        return new class($message) extends AbstractException {
+        };
     }
 
     /** A plain mock hands out an empty query builder; this one builds the real MariaDB SQL. */
