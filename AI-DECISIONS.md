@@ -30,8 +30,9 @@ narzuciłem sam, poprawiając pierwszy plan agenta, który zaczynał od hooków.
   `copilot-instructions.md`: kilka kopii tych samych reguł z czasem by się rozjechało.
 - Zawiera zasady pracy (test najpierw, nie zmieniaj oczekiwań testów, nie edytuj `.env*` ani starych
   migracji, nie rób commitów bez prośby, nie ruszaj cudzych zmian), zasady bazy (schemat tylko przez
-  nową migrację, migracje uruchamia człowiek, tylko `SELECT` do diagnozy) i reguły biznesowe: model
-  rezerwacji, antyfraud, spread i zaokrąglenia, dostęp do portfeli, usuwanie portfela.
+  nową migrację, migracje uruchamia człowiek, tylko `SELECT` do diagnozy), zasady API (zły JSON = 400,
+  błędy jako `{"error": ...}`) i reguły biznesowe: model rezerwacji, antyfraud, spread i zaokrąglenia,
+  dostęp do portfeli, usuwanie portfela.
 - Prawie każda reguła powstała po konkretnej pomyłce w trakcie pracy, np.:
   - `release()` po cichu obcinał zwalnianą blokadę do zera → reguła "większe zwolnienie niż
     rezerwacja to błąd księgowy: wyjątek, nigdy ciche obcięcie";
@@ -39,7 +40,10 @@ narzuciłem sam, poprawiając pierwszy plan agenta, który zaczynał od hooków.
     "środki klienta nigdy nie mogą zostać zablokowane na stałe";
   - reguła o przelewie "poniżej 1 grosza" dała się czytać jako zakaz wyzerowania konta →
     doprecyzowana, że chodzi o kwotę **otrzymaną** po wymianie, z wyjaśnieniem, dlaczego kierunek
-    zaokrągleń jest ważny (decyduje, kto dostaje ułamek grosza).
+    zaokrągleń jest ważny (decyduje, kto dostaje ułamek grosza);
+  - reguła resztki przy usuwaniu portfela zakładała, że saldo warte mniej niż 0,01 EUR "nie da się
+    wydać", więc trafiało do kantoru. Zewnętrzny recenzent pokazał, że to nieprawda (0,04 PLN → 3,35 HUF)
+    → teraz kantor bierze tylko to, czego nie da się przelać do żadnej waluty, i to po potwierdzeniu klienta.
 - Liczby, które decydują o pieniądzach (próg 15 000 EUR, `>` zamiast `>=`, liczba miejsc po
   przecinku, kierunek zaokrągleń, reguła resztki przy usuwaniu portfela), mają dopisek "nie zmieniaj bez zgody
   właściciela" przy samej regule, a nie w jednym zbiorczym zdaniu – agent widzi go tam, gdzie czyta regułę.
@@ -116,6 +120,12 @@ pobraniu kodu". Agent i właściciel mają jeden wspólny opis tego, jak aplikac
   jako reguły do `AGENTS.md` – stąd większość jego treści.
 - Zmiany `AGENTS.md` zawsze w osobnych commitach `docs(ai): ...`, żeby było widać, kiedy i dlaczego
   zmieniły się instrukcje dla agenta.
+- Recenzja z zewnątrz: na koniec osobna sesja AI, która widziała tylko repo z GitHuba, oceniła całe
+  zadanie i zgłosiła 12 uwag. 9 poprawiłem, każdą osobnym PR (m.in. reguła resztki przy usuwaniu
+  portfela, 400 zamiast 500 przy złym JSON-ie, 409 przy dwóch jednoczesnych portfelach, kwoty przelewu
+  zawsze z 4 miejscami, błędy Symfony na `/api` jako JSON, eksport ochrony `main`). 3 świadomie
+  zostawiłem: zaokrąglenie spreadu (decyzja z uzasadnieniem w teście), commit `7839350` łączący kilka
+  poprawek (nie przepisuję historii chronionego `main`) i testy z prawdziwą bazą – opisane w b)2.
 
 ## b) Czego celowo nie zrobiłem
 
@@ -134,6 +144,9 @@ pobraniu kodu". Agent i właściciel mają jeden wspólny opis tego, jak aplikac
   właściciela" zostały przy regułach, których dotyczą.
 - **Zakaz czytania `.env`** – czytanie jest potrzebne do diagnozy (tak znalazł się błąd `serverVersion`).
   Zakazana jest tylko edycja.
+- **Zamiana błędów 500 na JSON** – błędy 4xx na `/api` mają format `{"error": ...}`, awarie serwera celowo
+  nie: w `dev` szczegóły pomagają znaleźć przyczynę, w `prod` Symfony je ukrywa, a przerabianie ich
+  mogłoby ukryć prawdziwy błąd.
 
 ### 2. Poza zakresem zadania (do decyzji właściciela w przyszłości)
 - Wykrywanie rozbijania dużej kwoty na kilka przelewów poniżej progu antyfraudu.
@@ -147,6 +160,8 @@ pobraniu kodu". Agent i właściciel mają jeden wspólny opis tego, jak aplikac
   bez automatycznego ponowienia. Pieniądze są bezpieczne, ale klient musi spróbować jeszcze raz.
 - Brak warunku w samej bazie, że saldo nie jest ujemne (`CHECK (balance >= 0)`). Pilnuje tego kod;
   warunek w bazie byłby drugą linią obrony (nowa migracja).
+- Testy z prawdziwą bazą i testy HTTP. Testy jednostkowe nie sprawdzają zapytań z blokadami ani
+  routingu i logowania; CI sprawdza na prawdziwej MariaDB tylko migracje.
 
 ### 3. Ograniczenia zabezpieczeń, które zostały
 - **`AGENTS.md`** to wskazówka, a nie blokada. W teście A/B (scenariusz 3) agent po odpowiedzi
@@ -174,8 +189,10 @@ pobraniu kodu". Agent i właściciel mają jeden wspólny opis tego, jak aplikac
   - po drugim czerwonym wyniku z rzędu agent może skończyć (ochrona przed pętlą) – zostaje ostrzeżenie
     "Nie akceptuj tej zmiany";
   - nie odróżnia "agent nie umie naprawić" od "agent czeka na decyzję właściciela" – w teście A/B
-    (scenariusz 2) agent słusznie czekał na zgodę, a hook i tak pokazał "Nie akceptuj";
-  - czerwone testy z cudzych niezacommitowanych zmian też zatrzymają agenta;
+    (scenariusz 2) agent słusznie czekał na zgodę, a hook i tak pokazał "Nie akceptuj"; przy poprawkach
+    po recenzji zdarzyło się to jeszcze 2 razy;
+  - czerwone testy z cudzych niezacommitowanych zmian też zatrzymają agenta – komunikat każe ich wtedy
+    nie ruszać i zapytać, ale sam hook nie wie, czyje to zmiany;
   - bez Dockera daje tylko ostrzeżenie;
   - szuka kontenera po nazwie `php-fpm`, więc przy dwóch projektach z taką nazwą testuje niewłaściwy;
   - działa tylko w Claude Code – przy innym narzędziu zostaje CI.
@@ -270,6 +287,10 @@ Podsumowanie: **A – 3 ✅, 1 ⚠️, 1 ❌; B – 5 ✅.**
   agent zatrzymywał się z tabelą "było / jest" i zmieniał stare testy dopiero po mojej zgodzie.
 - Reguła "nie ruszaj cudzych niezacommitowanych zmian" zadziałała dwa razy: agent nie ruszył mojej
   niezacommitowanej zmiany w `AGENTS.md` ani starej kopii roboczej repo w `.claude/`, tylko zapytał.
+- Przy poprawkach po recenzji hook Stop dwa razy pokazał czerwone stare testy (nowa reguła usuwania
+  portfela, zapis kwot przelewu). Agent nie cofnął poprawki – przy usuwaniu portfela cofnięcie przywróciłoby
+  zabieranie pieniędzy klienta – tylko pokazał tabelę "było / jest" i czekał na moją zgodę. Recenzent
+  pieniędzy uruchomiony bez prośby wyłapał nieaktualną regułę w `AGENTS.md` i błąd 404 przy `?confirm=tak`.
 
 ### 5. Ograniczenia tego sprawdzenia
 - 1 przebieg na scenariusz pokazuje kierunek, nie statystykę – odpowiedzi agenta nie są powtarzalne.
