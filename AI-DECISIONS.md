@@ -151,10 +151,22 @@ pobraniu kodu". Agent i właściciel mają jeden wspólny opis tego, jak aplikac
   Dlatego `AGENTS.md` jest na liście plików, przy których właściciel ma nie akceptować zmiany bez
   swojej prośby.
 - **`.claude/settings.json`** chroni przed pomyłką, nie przed złą wolą: zakaz edycji nie obejmuje
-  zapisu przez terminal (`sed -i`, `echo >`), `rm -r -f` i `rm -Rf` omijają zakaz `rm -rf`, a ręcznego
-  SQL (`UPDATE` w bazie) nie da się rozsądnie zablokować wzorcem polecenia – tu działa tylko `AGENTS.md`.
+  zapisu przez terminal (`sed -i`, `echo >`), a `rm -r -f` i `rm -Rf` omijają zakaz `rm -rf`.
   Zakazy bywają też nadgorliwe: `rm -rf` i `git reset --hard` zostały zablokowane nawet w kopii
   roboczej poza projektem.
+- **Ręczny SQL na bazie** (np. `UPDATE` salda z pominięciem aplikacji) – na komputerze, na którym
+  pracuje agent, nie da się go zablokować. Agent ma taki sam dostęp do bazy jak aplikacja: hasło jest
+  w `.env` (czytanie celowo dozwolone), a polecenia w kontenerze musi uruchamiać, żeby puszczać testy.
+  Do bazy dojdzie co najmniej trzema drogami: `docker exec mariadb mariadb ...`,
+  `php bin/console dbal:run-sql "UPDATE ..."` (komenda Doctrine dostępna w aplikacji) albo własny
+  skrypt PHP. Zakaz jednej drogi w `.claude/settings.json` zostawia pozostałe, a osobne konto bazy
+  "tylko do odczytu" nic nie daje, dopóki agent zna hasło aplikacji. Dlatego celowo nie dodałem takich
+  zakazów – dawałyby fałszywe poczucie bezpieczeństwa. Lokalnie chroni tylko `AGENTS.md` (w teście A/B,
+  scenariusz 5, bez niego agent zmienił saldo `UPDATE`-em, z nim odmówił), a lokalna baza to dane
+  testowe. Prawdziwa ochrona pieniędzy klientów jest poza komputerem agenta: hasło do bazy z prawdziwymi
+  pieniędzmi nigdy nie trafia na ten komputer ani do czatu (`docs/praca-z-agentem-ai.md`, "Dostęp
+  i hasła"), a zmiany na produkcji wchodzą tylko przez kod scalony w PR i migracje uruchamiane przez
+  człowieka.
 - **Hook Stop**:
   - po drugim czerwonym wyniku z rzędu agent może skończyć (ochrona przed pętlą) – zostaje ostrzeżenie
     "Nie akceptuj tej zmiany";
