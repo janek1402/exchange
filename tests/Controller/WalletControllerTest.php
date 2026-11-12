@@ -103,6 +103,60 @@ class WalletControllerTest extends TestCase
     }
 
     /**
+     * A broken body is the client's mistake (400), not a server error (500), and nothing
+     * may reach the services: no wallet is created, no money is deposited or reserved.
+     *
+     * @throws Throwable
+     */
+    #[DataProvider('brokenBodies')]
+    public function testBodyThatIsNotAJsonObjectIsABadRequest(string $endpoint, string $body): void
+    {
+        $user = new User(1, 'test@example.com', ['ROLE_USER'], new DateTimeImmutable());
+
+        $this->walletService->expects(self::never())->method('createWallet');
+        $this->depositService->expects(self::never())->method('deposit');
+        $this->transferService->expects(self::never())->method('transfer');
+
+        $request = new Request(content: $body);
+        $response = match ($endpoint) {
+            'create' => $this->controller->create($request, $user),
+            'deposit' => $this->controller->deposit(5, $request, $user),
+            'transfer' => $this->controller->transfer($request, $user),
+        };
+
+        self::assertSame(400, $response->getStatusCode());
+        self::assertSame('Request body must be a JSON object.', json_decode($response->getContent(), true, 512, JSON_THROW_ON_ERROR)['error']);
+    }
+
+    public static function brokenBodies(): iterable
+    {
+        foreach (['create', 'deposit', 'transfer'] as $endpoint) {
+            yield "$endpoint: empty body" => [$endpoint, ''];
+            yield "$endpoint: cut off" => [$endpoint, '{"amount": "10'];
+            yield "$endpoint: not JSON" => [$endpoint, 'amount=10'];
+            yield "$endpoint: JSON text, not an object" => [$endpoint, '"PLN"'];
+            yield "$endpoint: JSON number, not an object" => [$endpoint, '5'];
+        }
+    }
+
+    /**
+     * {"currency": ["PLN"]} used to reach Currency::from() with a list and end in a 500.
+     *
+     * @throws Throwable
+     */
+    public function testCurrencyThatIsNotTextIsInvalid(): void
+    {
+        $user = new User(1, 'test@example.com', ['ROLE_USER'], new DateTimeImmutable());
+
+        $this->walletService->expects(self::never())->method('createWallet');
+
+        $response = $this->controller->create(new Request(content: '{"currency": ["PLN"]}'), $user);
+
+        self::assertSame(400, $response->getStatusCode());
+        self::assertSame('Invalid currency.', json_decode($response->getContent(), true, 512, JSON_THROW_ON_ERROR)['error']);
+    }
+
+    /**
      * @throws Throwable
      */
     public function testCreateReturnsBadRequestWhenCurrencyMissing(): void
