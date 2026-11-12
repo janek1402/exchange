@@ -73,7 +73,12 @@ Właściciel nie jest programistą: tłumacz zmiany prostym językiem i zawsze o
 - Usunięty portfel nie istnieje dla aplikacji: każde zapytanie o portfele musi pomijać
   `deleted_at IS NOT NULL` (przelew, wpłata, lista, ponowne usunięcie = 404).
 - Odmowa 409, gdy: rezerwacja > 0, istnieje przelew PENDING/FRAUD_REVIEW z portfela LUB na portfel
-  (przychodzący nie zostawia rezerwacji), saldo warte 0,01 EUR lub więcej. Zablokowany portfel = 422.
-- Saldo warte mniej niż 0,01 EUR (resztka, której nie da się wydać) trafia do portfela firmy w tej
-  samej transakcji DB. Progu nie zmieniaj bez zgody właściciela.
+  (przychodzący nie zostawia rezerwacji), saldo da się jeszcze przelać. Zablokowany portfel = 422.
+- "Da się przelać" = z pełnych groszy (jenów) salda klient dostałby po przeliczeniu i odjęciu spreadu
+  co najmniej 1 grosz (jen) w jakiejkolwiek innej walucie (`ExchangeQuoteService::canBeTransferred()`,
+  to samo wyliczenie co przelew). Takich środków klient nie traci nigdy, bez względu na kwotę
+  i potwierdzenie.
+- Resztka, której nie da się przelać nigdzie (część grosza, HUF poniżej ok. 0,87), trafia do portfela
+  firmy w tej samej transakcji DB, ale TYLKO po potwierdzeniu klienta (`?confirm=true`). Bez
+  potwierdzenia: 409 z ostrzeżeniem o stracie. Tej reguły nie zmieniaj bez zgody właściciela.
 - Jeden AKTYWNY portfel na użytkownika i walutę (indeks z kolumną `active_flag`); usuniętych może być wiele.
